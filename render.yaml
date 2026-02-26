@@ -1,24 +1,31 @@
+name: travelintel-app
+
 services:
-  - type: web
-    name: travelintel-web
-    env: python
-    plan: free
-    branch: main
-
-    buildCommand: |
-      pip install --upgrade pip
-      pip install -r requirements.txt
-      python -m playwright install
-      python -m playwright install chromium
-    
-    startCommand: streamlit run dashboard.py --server.port $PORT --server.address 0.0.0.0
-
-    envVars:
+  - name: web
+    github:
+      repo: akindele22/TravelIntel.git
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    http_port: 8501
+    instance_size_slug: basic-xxs
+    instance_count: 1
+    run_command: streamlit run dashboard.py --server.port=8501 --server.address=0.0.0.0
+    envs:
       - key: DATABASE_URL
-        fromDatabase:
-          name: travelintel-db
-          property: connectionString
+        scope: RUN_TIME
+        type: SECRET
 
-databases:
-  - name: travelintel-db
-    plan: free
+  - name: worker
+    github:
+      repo:  akindele22/TravelIntel.git
+      branch: main
+      deploy_on_push: true
+    dockerfile_path: Dockerfile
+    instance_size_slug: basic-xs
+    instance_count: 1
+    run_command: python run_worker.py
+    envs:
+      - key: DATABASE_URL
+        scope: RUN_TIME
+        type: SECRET
