@@ -20,7 +20,6 @@ class DatabaseHandler:
         self.create_tables()
     
     def connect(self):
-        """Establish database connection"""
         try:
             self.conn = psycopg2.connect(
                 host=config.DATABASE_CONFIG['host'],
@@ -31,10 +30,11 @@ class DatabaseHandler:
             )
             self.conn.autocommit = False
             print("Database connection established")
+            print("DB URL:", config.DATABASE_CONFIG['url'])
+    
         except Exception as e:
             print(f"Error connecting to database: {e}")
             raise
-    
     @contextmanager
     def get_cursor(self):
         """Context manager for database cursor"""

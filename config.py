@@ -13,6 +13,7 @@ DATABASE_CONFIG = {
     'database': os.getenv('DB_NAME', 'travel_advisories'),
     'user': os.getenv('DB_USER', 'postgres'),
     'password': os.getenv('DB_PASSWORD', 'ApexB')
+
 }
 
 # Proxy Configuration
