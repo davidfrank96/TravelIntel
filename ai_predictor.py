@@ -185,13 +185,13 @@ class InsightAnalyzer:
         s = max(1.0, min(s, 4.0))
         
         # threshold-based mapping
-        if s < 1.5:
+        if s < 1.5: # 1.0 <= score < 1.5 -> A
             return "A"
-        elif s < 2.5:
+        elif s < 2.5: # 1.5 <= score < 2.5 -> B
             return "B"
-        elif s < 3.5:
+        elif s < 3.5: # 2.5 <= score < 3.5 -> C
             return "C"
-        elif s < 4.0:
+        elif s < 4.0: # 3.5 <= score < 4.0 -> D
             return "D"
         else:
             return "E"
@@ -339,4 +339,3 @@ class InsightAnalyzer:
             .reset_index()
         )
         return agg
-

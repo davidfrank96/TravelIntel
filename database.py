@@ -21,20 +21,13 @@ class DatabaseHandler:
     
     def connect(self):
         try:
-            db_url = config.DATABASE_CONFIG['url']
-            
-    
-            if db_url:
-                self.conn = psycopg2.connect(db_url)
-            else:
-                self.conn = psycopg2.connect(
-                    host=config.DATABASE_CONFIG['host'],
-                    port=config.DATABASE_CONFIG['port'],
-                    database=config.DATABASE_CONFIG['database'],
-                    user=config.DATABASE_CONFIG['user'],
-                    password=config.DATABASE_CONFIG['password']
-                )
-    
+            self.conn = psycopg2.connect(
+                host=config.DATABASE_CONFIG['host'],
+                port=config.DATABASE_CONFIG['port'],
+                database=config.DATABASE_CONFIG['database'],
+                user=config.DATABASE_CONFIG['user'],
+                password=config.DATABASE_CONFIG['password']
+            )
             self.conn.autocommit = False
             print("Database connection established")
             print("DB URL:", config.DATABASE_CONFIG['url'])

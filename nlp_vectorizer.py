@@ -210,11 +210,11 @@ class LemmatizingTfidfVectorizer:
         p = Path(filepath)
         p.parent.mkdir(parents=True, exist_ok=True)
         
-        # convert any numpy/int64 values to plain Python ints so JSON
-        # serialization never fails (see failures in test suite).
-        serializable = {k: int(v) for k, v in self.vocabulary_.items()}
+        # Convert any numpy/int64 values to plain Python ints for JSON compatibility.
+        # The traceback indicates self.vocabulary_ was passed directly, which causes TypeError.
+        serializable_vocab = {k: int(v) for k, v in self.vocabulary_.items()}
         with p.open('w', encoding='utf-8') as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
+            json.dump(serializable_vocab, f, indent=2, ensure_ascii=False)
         
         print(f"Vocabulary saved to {filepath}")
     

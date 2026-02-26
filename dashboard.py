@@ -2,43 +2,34 @@
 Main Orchestration Script for Travel Advisory Scraper
 HTTP-only, manual scraping (no Playwright/Selenium)
 """
-import time
-from typing import List, Dict
-from scrapers import (
-    USStateDeptScraper,
-    UKFCDOScraper,
-    # SmartTravellerScraper,
-    # IATAScraper,
-    # CanadaTravelScraper
-)
-from db_factory import DatabaseHandler
+
+from datetime import datetime, timedelta
+
+import pandas as pd
+import streamlit as st
+
+from database_sqlite import DatabaseHandler
 from data_cleaner import DataCleaner
-import config
-from tqdm import tqdm
+from ai_predictor import InsightAnalyzer
+from nlp_vectorizer import LemmatizingTfidfVectorizer
 
 
 def scrape_all() -> List[Dict]:
     """Scrape all configured sources via HTTP requests only"""
     all_advisories = []
 
-    print("\n" + "=" * 60)
-    print("Starting Scraping Process")
-    print("=" * 60)
 
-    scrapers = {
-        'us_state_dept': (USStateDeptScraper, config.TARGET_URLS['us_state_dept']),
-        'uk_fcdo': (UKFCDOScraper, config.TARGET_URLS['uk_fcdo']),
-        # 'smartraveller': (SmartTravellerScraper, config.TARGET_URLS['smartraveller']),
-        # 'iata': (IATAScraper, config.TARGET_URLS['iata']),
-        # 'canada': (CanadaTravelScraper, config.TARGET_URLS['canada'])
-    }
-
-    for source_name, (scraper_class, url) in tqdm(scrapers.items(), desc="Scraping sources"):
-        print(f"\nScraping {source_name}...")
-        try:
-            scraper = scraper_class(url=url, use_playwright=False, use_selenium=False)
-            advisories = scraper.scrape()
-            scraper.close()
+@st.cache_data(show_spinner=False)
+def load_data(country_filter=None, source_filter=None, days_back: int = 365):
+    db = DatabaseHandler()
+    try:
+        advisories = db.get_advisories(
+            country=country_filter,
+            source=source_filter,
+            limit=5000,
+        )
+    finally:
+        db.close()
 
             if advisories:
                 print(f"  ✓ Found {len(advisories)} advisories from {source_name}")
@@ -111,12 +102,28 @@ def run_pipeline():
     print("TRAVEL ADVISORY SCRAPER PIPELINE")
     print("=" * 60)
 
-    try:
-        # Step 1: Scrape
-        advisories = scrape_all()
-        if not advisories:
-            print("No advisories scraped. Exiting.")
-            return
+    st.sidebar.header("Filters")
+
+    country_input = st.sidebar.text_input(
+        "Country (optional, partial name allowed)", value=""
+    )
+    source_input = st.sidebar.selectbox(
+        "Source",
+        options=[
+            "All",
+            "US State Department",
+            "UK FCDO",
+            "Smart Traveller (Australia)",
+            "IATA Travel Centre",
+            "Canada Travel",
+        ],
+    )
+    days_back = st.sidebar.slider(
+        "Look back (days)", min_value=30, max_value=730, value=365, step=30
+    )
+
+    source_filter = None if source_input == "All" else source_input
+    country_filter = country_input if country_input.strip() else None
 
         # Step 2: Clean
         cleaned_advisories = clean_data(advisories)

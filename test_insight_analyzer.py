@@ -9,7 +9,11 @@ def test_risk_grade_boundaries():
     # integer scores
     assert ia._risk_grade_from_score(1) == "A"
     assert ia._risk_grade_from_score(2) == "B"
-    assert ia._risk_grade_from_score(3) == "C"
+    
+    # Debug failing boundary condition
+    actual_grade = ia._risk_grade_from_score(3)
+    print(f"DEBUG: Score 3 returned '{actual_grade}'")
+    assert actual_grade == "C"
     assert ia._risk_grade_from_score(4) == "E"  # highest risk
 
     # fractional values check midpoints

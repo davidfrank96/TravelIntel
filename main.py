@@ -3,8 +3,15 @@ Manual Travel Advisory Scraper Pipeline
 HTTP-only scraping, no scheduler
 """
 from typing import List, Dict
-from scrapers import USStateDeptScraper, UKFCDOScraper  # add more if needed
-from db_factory import DatabaseHandler
+from proxy_manager import ProxyManager
+from scrapers import (
+    USStateDeptScraper,
+    UKFCDOScraper,
+    SmartTravellerScraper,
+    IATAScraper,
+    CanadaTravelScraper
+) 
+from database_sqlite import DatabaseHandler
 from data_cleaner import DataCleaner
 import config
 import time
