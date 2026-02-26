@@ -9,48 +9,27 @@ from datetime import datetime, timedelta
 
 import pandas as pd
 import streamlit as st
-import config
 
-from db_factory import DatabaseHandler
+from database_sqlite import DatabaseHandler
 from data_cleaner import DataCleaner
 from ai_predictor import InsightAnalyzer
-# nlp_vectorizer import removed because the dashboard doesn't actually use it;
-# keeping it here previously forced a dependency on scikit-learn during
-# startup.  NLP features are exercised in separate validation/tests.
+from nlp_vectorizer import LemmatizingTfidfVectorizer
 
 
 st.set_page_config(page_title="Travel Security Dashboard", layout="wide")
 
-# show which database configuration we're using (helpful in deployment)
-try:
-    dbconf = config.DATABASE_CONFIG
-    st.sidebar.markdown("**DB:** {}@{}:{}".format(
-        dbconf.get('database',''),
-        dbconf.get('host',''),
-        dbconf.get('port','')
-    ))
-except Exception:
-    pass
-
 
 @st.cache_data(show_spinner=False)
 def load_data(country_filter=None, source_filter=None, days_back: int = 365):
+    db = DatabaseHandler()
     try:
-        db = DatabaseHandler()
         advisories = db.get_advisories(
             country=country_filter,
             source=source_filter,
             limit=5000,
         )
-    except Exception as e:
-        # show error in UI for easier debugging when DB isn't reachable
-        st.error(f"Database error: {e}")
-        return pd.DataFrame()
     finally:
-        try:
-            db.close()
-        except Exception:
-            pass
+        db.close()
 
     if not advisories:
         return pd.DataFrame()
@@ -142,16 +121,6 @@ def summarize_location(df_country: pd.DataFrame) -> str:
 
 def main():
     st.title("Travel Security & Safety Dashboard")
-
-    # the DataCleaner will silently fall back to dummy analyzers/lemmatizers
-    # when optional dependencies are missing; no need to clutter the UI with
-    # warnings.  downstream code can inspect `.sentiment_enabled` or
-    # `.lemmatizer_enabled` if it really cares.
-    try:
-        _ = DataCleaner()
-    except Exception:
-        # ignore, load_data will handle errors later
-        pass
 
     st.sidebar.header("Filters")
 

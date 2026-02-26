@@ -5,45 +5,27 @@ import json
 import pickle
 from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Set
-# TF-IDF vectorizer is used for document encoding.  If scikit-learn is
-# not installed we fall back to a dummy placeholder; methods needing it will
-# raise errors when invoked.
-try:
-    from sklearn.feature_extraction.text import TfidfVectorizer
-except ImportError:
-    TfidfVectorizer = None
-
-# NLTK is an optional dependency; if it's missing we fall back to simple
-# tokenization and a no‑op lemmatizer so the rest of the code still works.
-try:
-    from nltk.stem import WordNetLemmatizer
-    from nltk.tokenize import word_tokenize
-    import nltk
-except ImportError:  # pragma: no cover - missing nltk environments
-    WordNetLemmatizer = None
-    # simple whitespace tokenizer
-    def word_tokenize(text: str) -> list:
-        return text.split()
-    nltk = None
-
-# Download required NLTK data only if the package is present
-if nltk:
-    try:
-        nltk.data.find('tokenizers/punkt')
-    except LookupError:
-        nltk.download('punkt', quiet=True)
-
-    try:
-        nltk.data.find('corpora/wordnet')
-    except LookupError:
-        nltk.download('wordnet', quiet=True)
-
-    try:
-        nltk.data.find('corpora/omw-1.4')
-    except LookupError:
-        nltk.download('omw-1.4', quiet=True)
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from nltk.stem import WordNetLemmatizer
+from nltk.tokenize import word_tokenize
+import nltk
 import numpy as np
+
+# Download required NLTK data on import
+try:
+    nltk.data.find('tokenizers/punkt')
+except LookupError:
+    nltk.download('punkt', quiet=True)
+
+try:
+    nltk.data.find('corpora/wordnet')
+except LookupError:
+    nltk.download('wordnet', quiet=True)
+
+try:
+    nltk.data.find('corpora/omw-1.4')
+except LookupError:
+    nltk.download('omw-1.4', quiet=True)
 
 
 class LemmatizingTfidfVectorizer:
@@ -71,17 +53,7 @@ class LemmatizingTfidfVectorizer:
             max_df: Maximum document frequency (ratio)
             ngram_range: Range of n-gram sizes
         """
-        # configure lemmatizer (may be dummy if nltk not present)
-        if WordNetLemmatizer:
-            self.lemmatizer = WordNetLemmatizer()
-            self.lemmatizer_enabled = True
-        else:
-            class _DummyLemmatizer:
-                def lemmatize(self, token: str) -> str:
-                    return token
-            self.lemmatizer = _DummyLemmatizer()
-            self.lemmatizer_enabled = False
-            # no console warning; consumers may check lemmatizer_enabled
+        self.lemmatizer = WordNetLemmatizer()
         self.max_features = max_features
         self.min_df = min_df
         self.max_df = max_df
@@ -144,8 +116,6 @@ class LemmatizingTfidfVectorizer:
         lemmatized_docs = [self._lemmatize_tokens(doc) for doc in documents]
         
         # Create and fit the vectorizer
-        if TfidfVectorizer is None:
-            raise RuntimeError("scikit-learn is required for TF-IDF vectorization")
         self.vectorizer = TfidfVectorizer(
             max_features=self.max_features,
             min_df=self.min_df,
@@ -210,11 +180,8 @@ class LemmatizingTfidfVectorizer:
         p = Path(filepath)
         p.parent.mkdir(parents=True, exist_ok=True)
         
-        # convert any numpy/int64 values to plain Python ints so JSON
-        # serialization never fails (see failures in test suite).
-        serializable = {k: int(v) for k, v in self.vocabulary_.items()}
         with p.open('w', encoding='utf-8') as f:
-            json.dump(serializable, f, indent=2, ensure_ascii=False)
+            json.dump(self.vocabulary_, f, indent=2, ensure_ascii=False)
         
         print(f"Vocabulary saved to {filepath}")
     
@@ -330,14 +297,7 @@ class CorpusExpander:
     """
     
     def __init__(self):
-        # similar fallback in CorpusExpander
-        if WordNetLemmatizer:
-            self.lemmatizer = WordNetLemmatizer()
-        else:
-            class _DummyLemmatizer:
-                def lemmatize(self, token: str) -> str:
-                    return token
-            self.lemmatizer = _DummyLemmatizer()
+        self.lemmatizer = WordNetLemmatizer()
     
     def expand_corpus(self, corpus: List[str]) -> List[str]:
         """

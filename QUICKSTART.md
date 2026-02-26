@@ -78,35 +78,17 @@ playwright install chromium
 
 ### 3. Set Up Database
 
-The project requires PostgreSQL.  Before running any scripts, set the
-following environment variables (for local development this can be done via
-an `.env` file).  You may either provide a full ``DATABASE_URL`` (Render's
-managed add‑on supplies this automatically) or define the individual fields
-below:
-
-```bash
-export DATABASE_URL="postgres://user:pass@host:5432/travel_advisories"
-
-# (or set components separately)
-export DB_HOST=<your-host>
-export DB_PORT=<your-port>          # usually 5432
-export DB_NAME=travel_advisories
-export DB_USER=<username>
-export DB_PASSWORD=<password>
-```
-
-Create the Postgres database manually or use the helper script:
+Create a PostgreSQL database:
 
 ```sql
 CREATE DATABASE travel_advisories;
 ```
 
+Or use the setup script:
+
 ```bash
 python setup_database.py
 ```
-
-On Render you’ll add the same variables under *Environment* and point the
-pool at a managed Postgres instance.
 
 ### 4. Configure Environment
 
@@ -165,23 +147,6 @@ This will:
 2. Clean and normalize the data
 3. Store in PostgreSQL
 
-A convenient wrapper that also exercises the test suite is provided. To run
-everything sequentially (recommended before deployment) and automatically
-launch the dashboard:
-
-```bash
-python run_all.py
-```
-
-This script runs the scraper tests, NLP tests, grading checks, the full
-pipeline, and then automatically launches Streamlit at
-http://localhost:8501.
-
-For production deployments it's typical to run the scraper/cleaner/store
-pipeline on a schedule (e.g. cron or a Windows Scheduled Task) and host the
-Streamlit app as a long‑running service.  In dev/single‑host environments,
-the combined `run_all.py` command provides a convenient one‑shot setup.
-
 ### 8. Run the Dashboard UI
 
 Once you have some data in the database, start the dashboard:
@@ -189,11 +154,6 @@ Once you have some data in the database, start the dashboard:
 ```bash
 streamlit run dashboard.py
 ```
-
-> **Tip:** ensure you've installed the project requirements (`pip install -r requirements.txt`).
-> The dashboard uses `vaderSentiment` for sentiment analysis; if it's missing
-> the app will still launch but all sentiment scores fallback to neutral
-> (0.0).
 
 This provides an interactive view of advisories and location-level insights
 for security, safety, and serenity (no ML prediction involved).

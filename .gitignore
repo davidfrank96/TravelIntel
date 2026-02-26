@@ -29,7 +29,6 @@ wheels/
 
 # Database
 *.db
-# sqlite files are no longer used (Postgres only)
 *.sqlite
 *.sqlite3
 

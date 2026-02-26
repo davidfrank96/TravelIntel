@@ -6,28 +6,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Database Configuration (PostgreSQL only)
-#
-# In production the app connects to a PostgreSQL instance.  Set the
-# following environment variables in your deployment:
-#
-#   DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
-#
-# The older SQLite fallback has been removed; if you need a lightweight
-# local database for testing, set up a Postgres container or use the
-# `travel_advisories.db` file manually.
-
+# Database Configuration
 DATABASE_CONFIG = {
-    # A complete connection URL (Render sets ``DATABASE_URL`` automatically for
-    # managed Postgres instances).  If provided it will take precedence in
-    # ``database.connect()``; otherwise individual components below are used.
-    'url': os.getenv('DATABASE_URL', ''),
-
     'host': os.getenv('DB_HOST', 'localhost'),
-    'port': int(os.getenv('DB_PORT', '5432')),
+    'port': os.getenv('DB_PORT', '5432'),
     'database': os.getenv('DB_NAME', 'travel_advisories'),
     'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', ''),
+    'password': os.getenv('DB_PASSWORD', 'ApexB')
 }
 
 # Proxy Configuration
@@ -58,8 +43,6 @@ TARGET_URLS = {
     'us_state_dept': 'https://travel.state.gov/content/travel/en/traveladvisories/traveladvisories.html',
     'uk_fcdo': 'https://www.gov.uk/foreign-travel-advice',
     'smartraveller': 'https://www.smartraveller.gov.au/destinations',
-    'un_reliefweb': 'https://reliefweb.int/',
-    'crisisgroup': 'https://www.crisisgroup.org/',
     'iata': 'https://www.iatatravelcentre.com/world.php',
     'canada': 'https://travel.gc.ca/travelling/advisories'  # Additional source
 }

@@ -1,265 +1,250 @@
-# TravelIntel
-TravelIntel provides curated security intelligence, regional threat data, and safety insights tailored to your destination so you can travel smarter and safer.
+# Travel Advisory Scraper with AI Prediction
 
-## Quick Start Guide / deployment
+A comprehensive web scraping system for collecting travel advisories from multiple government sources, with data cleaning, PostgreSQL storage, and AI-powered risk prediction.
 
-## Prerequisites
+## Features
 
-1. **Python 3.8+** installed
-2. **PostgreSQL** installed and running
-3. **Residential Proxies** (optional but recommended)
+- **Rotating Residential Proxy Support**: Built-in proxy rotation manager for reliable scraping
+- **Multiple Scraping Engines**: Supports Playwright, Selenium, and Requests
+- **Multiple Data Sources**:
+  - U.S. Department of State (travel.state.gov)
+  - UK Foreign Office (FCDO) (gov.uk/foreign-travel-advice)
+  - Australian Smart Traveller (smartraveller.gov.au)
+  - IATA Travel Centre (iatatravelcentre.com)
+  - Canada Travel Advisories (travel.gc.ca)
+- **Data Cleaning & Normalization**: Automatic country name and risk level normalization
+- **PostgreSQL Database**: Structured storage with proper indexing
+- **AI Prediction**: Machine learning model for risk level prediction
+- **Scheduled Scraping**: Automated periodic data collection
 
-## Step-by-Step Setup
+## Installation
 
-### 0. Create and Activate Virtual Environment (Recommended)
+1. **Clone or download this repository**
 
-**In Git Bash (MINGW64):**
-```bash
-# Create virtual environment (if it doesn't exist)
-python -m venv osint
-
-# Activate virtual environment
-source osint/Scripts/activate
-```
-
-**In PowerShell:**
-```powershell
-# Create virtual environment (if it doesn't exist)
-python -m venv osint
-
-# Activate virtual environment
-.\osint\Scripts\Activate.ps1
-```
-
-**In Command Prompt (CMD):**
-```cmd
-# Create virtual environment (if it doesn't exist)
-python -m venv osint
-
-# Activate virtual environment
-osint\Scripts\activate.bat
-```
-
-**Note:** After activation, you should see `(osint)` at the start of your prompt.
-
-### 1. Install Dependencies
-
+2. **Install Python dependencies**:
 ```bash
 pip install -r requirements.txt
 ```
 
-**If you get build errors on Windows (numpy/pandas "compiler not found"):**
-
-Install using pre-built wheels only (no compilation):
-```bash
-pip install --upgrade pip
-pip install numpy pandas --only-binary :all:
-pip install -r requirements.txt
-```
-
-**If you get an error with `psycopg2-binary` on Windows:**
-
-Try installing it separately first:
-```bash
-pip install psycopg2-binary --upgrade
-pip install -r requirements.txt
-```
-
-**Alternative:** If `psycopg2-binary` still fails, use the modern `psycopg` package instead:
-```bash
-pip install psycopg[binary] sqlalchemy
-pip install -r requirements.txt --ignore-installed psycopg2-binary
-```
-
-Then update `database.py` to use `psycopg` instead of `psycopg2` (import changes needed).
-
-### 2. Install Playwright Browsers
-
+3. **Install Playwright browsers** (if using Playwright):
 ```bash
 playwright install chromium
 ```
 
-### 3. Set Up Database
+4. **Install ChromeDriver** (if using Selenium):
+   - Download from https://chromedriver.chromium.org/
+   - Add to PATH or specify in code
 
-Create a PostgreSQL database:
-
+5. **Set up PostgreSQL database**:
 ```sql
 CREATE DATABASE travel_advisories;
 ```
 
-Or use the setup script:
+6. **Configure environment variables**:
+   - Copy `.env.example` to `.env`
+   - Update database credentials
+   - Add your proxy credentials (if using proxies)
 
-```bash
-python setup_database.py
-```
-
-### 4. Configure Environment
-
-Copy the example environment file:
-
-```bash
-copy .env.example .env
-```
-
-Edit `.env` and add your database credentials:
-
-```
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=travel_advisories
-DB_USER=postgres
-DB_PASSWORD=your_password
-```
-
-### 5. Configure Proxies (Optional)
-
-Edit `config.py` and add your proxy credentials:
-
+7. **Configure proxies** (optional):
+   Edit `config.py` and add your proxy URLs to `PROXY_CONFIG['proxies']`:
 ```python
-PROXY_CONFIG = {
-    'proxies': [
-        'http://username:password@proxy1.example.com:8080',
-        'http://username:password@proxy2.example.com:8080',
-    ],
-    ...
-}
+'proxies': [
+    'http://username:password@proxy1.example.com:8080',
+    'http://username:password@proxy2.example.com:8080',
+]
 ```
 
-**Note**: If you don't have proxies, the scraper will still work but may be rate-limited or blocked by some sites.
+## Usage
 
-### 6. Test the Scrapers
+### Basic Usage
 
-Test individual scrapers to ensure they work:
-
-```bash
-python test_scrapers.py
-```
-
-This will test each scraper and show you what data it can extract.
-
-### 7. Run the Full Pipeline
-
-Run the complete scraping pipeline:
-
+Run the scraper once:
 ```bash
 python main.py
 ```
 
-This will:
-1. Scrape all configured sources
-2. Clean and normalize the data
-3. Store in PostgreSQL
+### Scheduled Scraping
 
-A convenient wrapper that also exercises the test suite is provided. To run
-everything sequentially (recommended before deployment) and automatically
-launch the dashboard:
-
+Run every 6 hours:
 ```bash
-python run_all.py
+python main.py --schedule 6
 ```
 
-When the script completes you’ll have scraped data in the Postgres database
-and all checks passing; the dashboard will launch automatically so you can
-inspect the results.  On deployed platforms such as Render you can set the
-start command to `python run_all.py` to guarantee the database is populated
-before the web service begins handling requests.
+### Scrape Specific Source
 
-For Render's managed Postgres service the platform will inject a
-``DATABASE_URL`` environment variable.  Our configuration honors that URL or
-falls back to the individual ``DB_*`` variables described in the QUICKSTART.
-This script runs the scraper tests, NLP tests, grading checks, the full
-pipeline, and then automatically launches Streamlit at
-http://localhost:8501.
+```bash
+python main.py --source us_state_dept
+```
 
-For production deployments it's typical to run the scraper/cleaner/store
-pipeline on a schedule (e.g. cron or a Windows Scheduled Task) and host the
-Streamlit app as a long‑running service.  In dev/single‑host environments,
-the combined `run_all.py` command provides a convenient one‑shot setup.
+### Run the Dashboard UI
 
-### 8. Run the Dashboard UI
-
-Once you have some data in the database, start the dashboard:
+After you have scraped some data and the database has records:
 
 ```bash
 streamlit run dashboard.py
 ```
 
-> **Tip:** ensure you've installed the project requirements (`pip install -r requirements.txt`).
-> The dashboard uses `vaderSentiment` for sentiment analysis; if it's missing
-> the app will still launch but all sentiment scores fallback to neutral
-> (0.0).
+This opens a web UI where users can explore security, safety, and serenity
+insights per country (no predictions, only descriptive analysis).
 
-This provides an interactive view of advisories and location-level insights
-for security, safety, and serenity (no ML prediction involved).
+## Project Structure
 
-### 9. Query the Database
-
-View scraped data:
-
-```bash
-# View all advisories
-python query_database.py
-
-# Filter by country
-python query_database.py --country "France"
-
-# Filter by source
-python query_database.py --source "US State Department"
-
-# Limit results
-python query_database.py --limit 50
+```
+OSINT/
+├── main.py                 # Main orchestration script
+├── config.py              # Configuration settings
+├── proxy_manager.py       # Proxy rotation manager
+├── scraper_base.py        # Base scraper class
+├── scrapers.py            # Individual site scrapers
+├── database.py            # PostgreSQL database handler
+├── data_cleaner.py        # Data cleaning and normalization
+├── ai_predictor.py        # AI prediction module
+├── requirements.txt       # Python dependencies
+├── .env.example          # Environment variables template
+└── README.md             # This file
 ```
 
-## Running on a Schedule
+## Configuration
 
-Run the scraper every 6 hours:
+### Database Configuration
 
-```bash
-python main.py --schedule 6
+Edit `config.py` or set environment variables:
+- `DB_HOST`: Database host (default: localhost)
+- `DB_PORT`: Database port (default: 5432)
+- `DB_NAME`: Database name (default: travel_advisories)
+- `DB_USER`: Database user (default: postgres)
+- `DB_PASSWORD`: Database password
+
+### Proxy Configuration
+
+Add your residential proxy credentials to `config.py`:
+```python
+PROXY_CONFIG = {
+    'proxies': [
+        'http://user:pass@proxy1.example.com:8080',
+        # Add more proxies...
+    ],
+    'rotation_strategy': 'round_robin',  # or 'random', 'least_used'
+    'timeout': 30,
+    'max_retries': 3
+}
 ```
+
+### Scraper Configuration
+
+Adjust scraping behavior in `config.py`:
+```python
+SCRAPER_CONFIG = {
+    'headless': True,        # Run browser in headless mode
+    'timeout': 30000,        # Page load timeout (ms)
+    'wait_time': 3,          # Wait time after page load (seconds)
+    'user_agent_rotation': True,
+    'respect_robots_txt': False
+}
+```
+
+## Database Schema
+
+### travel_advisories
+- `id`: Primary key
+- `source`: Source website
+- `country`: Country name
+- `risk_level`: Risk level text
+- `date`: Advisory date
+- `description`: Full description
+- `url`: Source URL
+- `scraped_at`: Scraping timestamp
+
+### processed_advisories
+- `id`: Primary key
+- `advisory_id`: Foreign key to travel_advisories
+- `country_normalized`: Normalized country name
+- `risk_level_normalized`: Normalized risk level
+- `risk_score`: Numeric risk score (1-4)
+- `keywords`: Extracted keywords array
+- `sentiment_score`: Sentiment analysis score
+
+### predictions
+- `id`: Primary key
+- `advisory_id`: Foreign key to travel_advisories
+- `predicted_risk_level`: AI predicted risk level
+- `predicted_risk_score`: AI predicted score
+- `confidence`: Prediction confidence
+- `model_version`: Model version used
+
+## Data Cleaning
+
+The `DataCleaner` class provides:
+- Country name normalization
+- Risk level standardization
+- Risk score extraction (1-4 scale)
+- Keyword extraction
+- Text cleaning
+- Deduplication
+
+## AI Prediction
+
+The `AIPredictor` class uses:
+- Random Forest Classifier
+- TF-IDF vectorization for text features
+- Automatic model training on historical data
+- Risk level prediction with confidence scores
+
+## Customization
+
+### Adding New Scrapers
+
+1. Create a new scraper class inheriting from `BaseScraper`:
+```python
+class NewSourceScraper(BaseScraper):
+    def parse(self, soup: BeautifulSoup) -> List[Dict]:
+        # Implement parsing logic
+        return advisories
+```
+
+2. Add to `scrapers.py` and register in `main.py`
+
+### Modifying Parsing Logic
+
+Each scraper's `parse()` method can be customized based on the website structure. You may need to inspect the HTML structure of target sites and adjust selectors accordingly.
 
 ## Troubleshooting
 
-### "No module named 'playwright'"
-```bash
-pip install playwright
-playwright install chromium
-```
+### Proxy Issues
+- Verify proxy credentials are correct
+- Check proxy format: `http://user:pass@host:port`
+- Test proxies manually before running scraper
 
-### "Database connection failed"
-- Check PostgreSQL is running: `pg_isready`
-- Verify credentials in `.env`
-- Ensure database exists: `python setup_database.py`
+### Database Connection Issues
+- Verify PostgreSQL is running
+- Check database credentials in `.env`
+- Ensure database exists
 
-### "No advisories found"
-- Website structure may have changed
-- Check `test_scrapers.py` output
-- Update selectors in `scrapers.py` if needed
-- Some sites may require JavaScript (use Playwright)
+### Scraping Failures
+- Some sites may have changed structure - update selectors in scrapers
+- Increase timeout values if pages load slowly
+- Check if sites require JavaScript rendering (use Playwright/Selenium)
 
-### "Proxy connection failed"
-- Verify proxy format: `http://user:pass@host:port`
-- Test proxies manually
-- Check proxy credentials
-- Some proxies may require authentication
+### Model Training Issues
+- Ensure sufficient historical data exists
+- Check that risk levels are properly normalized
+- Verify feature extraction is working
 
-## Next Steps
+## Legal & Ethical Considerations
 
-1. **Customize Scrapers**: Update selectors in `scrapers.py` based on actual website structure
-2. **Add More Sources**: Create new scraper classes for additional sources
-3. **Improve AI Model**: Train on more data or use more sophisticated models
-4. **Add Monitoring**: Set up logging and alerting for scraping failures
-5. **Create API**: Build a REST API to query the database
+- Respect website terms of service
+- Implement rate limiting
+- Consider robots.txt compliance
+- Use proxies responsibly
+- Only scrape publicly available data
 
-## Example Proxy Providers
+## License
 
-Popular residential proxy providers:
-- Bright Data (formerly Luminati)
-- Smartproxy
-- Oxylabs
-- Proxy-Cheap
-- Soax
+This project is provided as-is for educational and research purposes.
 
-**Important**: Always comply with website terms of service and use proxies responsibly.
+## Support
 
-
+For issues or questions:
+1. Check the troubleshooting section
+2. Review configuration settings
+3. Inspect error messages for specific issues
