@@ -29,4 +29,4 @@ COPY . .
 EXPOSE 8501
 
 # Default command (overridden by DO for worker)
-CMD ["streamlit", "run", "app/dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
+CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
