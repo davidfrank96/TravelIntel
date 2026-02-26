@@ -1,138 +1,163 @@
 """
-Main Orchestration Script for Travel Advisory Scraper
-HTTP-only, manual scraping (no Playwright/Selenium)
+TravelIntel Production Dashboard
+Read-only UI connected to PostgreSQL
 """
 
+import os
 from datetime import datetime, timedelta
 
 import pandas as pd
+import psycopg2
 import streamlit as st
-
-from database_sqlite import DatabaseHandler
-from data_cleaner import DataCleaner
-from ai_predictor import InsightAnalyzer
-from nlp_vectorizer import LemmatizingTfidfVectorizer
+from psycopg2.extras import RealDictCursor
 
 
-def scrape_all() -> List[Dict]:
-    """Scrape all configured sources via HTTP requests only"""
-    all_advisories = []
+# ----------------------------
+# CONFIG
+# ----------------------------
+
+st.set_page_config(
+    page_title="TravelIntel Dashboard",
+    layout="wide",
+)
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+if not DATABASE_URL:
+    st.error("DATABASE_URL not configured.")
+    st.stop()
 
 
-@st.cache_data(show_spinner=False)
-def load_data(country_filter=None, source_filter=None, days_back: int = 365):
-    db = DatabaseHandler()
+# ----------------------------
+# DATABASE CONNECTION
+# ----------------------------
+
+def get_connection():
+    return psycopg2.connect(DATABASE_URL)
+
+
+@st.cache_data(ttl=300)
+def fetch_advisories(country=None, source=None, days_back=365):
+    """Fetch advisories from PostgreSQL with filters"""
+
+    query = """
+        SELECT
+            country_normalized,
+            risk_level_normalized,
+            risk_score,
+            sentiment_score,
+            source,
+            created_at
+        FROM advisories
+        WHERE created_at >= NOW() - INTERVAL %s
+    """
+
+    params = [f"{days_back} days"]
+
+    if country:
+        query += " AND country_normalized ILIKE %s"
+        params.append(f"%{country}%")
+
+    if source:
+        query += " AND source = %s"
+        params.append(source)
+
+    query += " ORDER BY created_at DESC LIMIT 2000"
+
+    conn = get_connection()
     try:
-        advisories = db.get_advisories(
-            country=country_filter,
-            source=source_filter,
-            limit=5000,
-        )
+        df = pd.read_sql(query, conn, params=params)
     finally:
-        db.close()
+        conn.close()
 
-            if advisories:
-                print(f"  ✓ Found {len(advisories)} advisories from {source_name}")
-                all_advisories.extend(advisories)
-            else:
-                print(f"  ✗ No advisories found from {source_name}")
-
-            # Rate limiting
-            time.sleep(2)
-
-        except Exception as e:
-            print(f"  ✗ Error scraping {source_name}: {e}")
-            continue
-
-    print(f"\nTotal advisories scraped: {len(all_advisories)}")
-    return all_advisories
+    return df
 
 
-def clean_data(advisories: List[Dict]) -> List[Dict]:
-    """Clean and normalize scraped data"""
-    print("\n" + "=" * 60)
-    print("Cleaning Data")
-    print("=" * 60)
+# ----------------------------
+# SIDEBAR FILTERS
+# ----------------------------
 
-    cleaner = DataCleaner()
-    cleaned = cleaner.clean_batch(advisories)
-    deduplicated = cleaner.deduplicate(cleaned)
+st.sidebar.header("Filters")
 
-    print(f"Cleaned {len(cleaned)} advisories")
-    print(f"After deduplication: {len(deduplicated)} advisories")
+country_input = st.sidebar.text_input("Country (optional)")
+source_input = st.sidebar.selectbox(
+    "Source",
+    options=[
+        "All",
+        "US State Department",
+        "UK FCDO",
+        "Smart Traveller (Australia)",
+        "IATA Travel Centre",
+        "Canada Travel",
+    ],
+)
 
-    return deduplicated
+days_back = st.sidebar.slider(
+    "Look back (days)",
+    min_value=30,
+    max_value=730,
+    value=365,
+    step=30,
+)
 
-
-def store_data(advisories: List[Dict]):
-    """Store cleaned data in database"""
-    print("\n" + "=" * 60)
-    print("Storing Data in Database")
-    print("=" * 60)
-
-    db = DatabaseHandler()
-    inserted = db.insert_advisories(advisories)
-    print(f"Inserted/Updated {inserted} advisories in database")
-
-    # Optional: store processed data for analytics
-    processed_data = []
-    for advisory in advisories:
-        processed_data.append({
-            'advisory_id': None,
-            'country_normalized': advisory.get('country_normalized'),
-            'risk_level_normalized': advisory.get('risk_level_normalized'),
-            'risk_score': advisory.get('risk_score'),
-            'keywords': advisory.get('keywords', []),
-            'sentiment_score': advisory.get('sentiment_score', 0.0),
-            'has_security_concerns': advisory.get('has_security_concerns', False),
-            'has_safety_concerns': advisory.get('has_safety_concerns', False),
-            'has_serenity_concerns': advisory.get('has_serenity_concerns', False)
-        })
-
-    if processed_data:
-        db.insert_processed_data(processed_data)
-        print(f"Stored {len(processed_data)} processed records")
-
-    db.close()
+source_filter = None if source_input == "All" else source_input
+country_filter = country_input.strip() or None
 
 
-def run_pipeline():
-    """Run the full pipeline manually"""
-    print("\n" + "=" * 60)
-    print("TRAVEL ADVISORY SCRAPER PIPELINE")
-    print("=" * 60)
+# ----------------------------
+# LOAD DATA
+# ----------------------------
 
-    st.sidebar.header("Filters")
-
-    country_input = st.sidebar.text_input(
-        "Country (optional, partial name allowed)", value=""
-    )
-    source_input = st.sidebar.selectbox(
-        "Source",
-        options=[
-            "All",
-            "US State Department",
-            "UK FCDO",
-            "Smart Traveller (Australia)",
-            "IATA Travel Centre",
-            "Canada Travel",
-        ],
-    )
-    days_back = st.sidebar.slider(
-        "Look back (days)", min_value=30, max_value=730, value=365, step=30
+with st.spinner("Loading data..."):
+    df = fetch_advisories(
+        country=country_filter,
+        source=source_filter,
+        days_back=days_back,
     )
 
-    source_filter = None if source_input == "All" else source_input
-    country_filter = country_input if country_input.strip() else None
 
-        # Step 2: Clean
-        cleaned_advisories = clean_data(advisories)
+# ----------------------------
+# UI DISPLAY
+# ----------------------------
 
-        # Step 3: Store
-        store_data(cleaned_advisories)
+st.title("🌍 Travel Intelligence Dashboard")
 
-        print("\nPipeline completed successfully!")
+if df.empty:
+    st.warning("No advisories found for selected filters.")
+    st.stop()
 
-    except Exception as e:
-        print(f"\nError in pipeline: {e}")
-        raise
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    st.metric("Total Advisories", len(df))
+
+with col2:
+    st.metric("Countries Covered", df["country_normalized"].nunique())
+
+with col3:
+    avg_risk = round(df["risk_score"].mean(), 2)
+    st.metric("Average Risk Score", avg_risk)
+
+
+st.divider()
+
+st.subheader("Risk Distribution")
+
+risk_counts = df["risk_level_normalized"].value_counts()
+st.bar_chart(risk_counts)
+
+
+st.divider()
+
+st.subheader("Recent Advisories")
+
+st.dataframe(
+    df.sort_values("created_at", ascending=False),
+    use_container_width=True,
+)
+
+
+st.caption(
+    f"Last updated: {datetime.utcnow().strftime('%Y-%m-%d %H:%M UTC')}"
+)
