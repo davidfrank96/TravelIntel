@@ -1,19 +1,15 @@
 FROM python:3.11-slim
 
-# Prevent .pyc files
+# Prevent Python from writing .pyc files
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-# Set working directory
-WORKDIR /app
-
-# Install system dependencies
+# Install system dependencies required by Playwright
 RUN apt-get update && apt-get install -y \
     curl \
     wget \
     gnupg \
     unzip \
-    build-essential \
     libnss3 \
     libatk1.0-0 \
     libatk-bridge2.0-0 \
@@ -26,21 +22,41 @@ RUN apt-get update && apt-get install -y \
     libxrandr2 \
     libgbm1 \
     libasound2 \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first (better Docker caching)
+# Create non-root user (security best practice)
+RUN useradd -m appuser
+
+# Set working directory
+WORKDIR /app
+
+# Copy requirements first (Docker layer caching)
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir -r requirements.txt
+# Install Python dependencies
+RUN pip install --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 # Install Playwright browsers
-RUN playwright install --with-deps
+RUN playwright install chromium
 
-# Copy entire project
+# Copy project files
 COPY . .
+
+# Change ownership
+RUN chown -R appuser:appuser /app
+
+# Switch to non-root user
+USER appuser
 
 # Expose Streamlit port
 EXPOSE 8501
 
-# Run Streamlit
+# Healthcheck (important for production)
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health || exit 1
+
+# Start Streamlit
 CMD ["streamlit", "run", "dashboard.py", "--server.port=8501", "--server.address=0.0.0.0"]
