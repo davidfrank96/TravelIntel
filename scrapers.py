@@ -24,11 +24,6 @@ HEADERS = {
 class USStateDeptScraper(BaseScraper):
     """Scraper for U.S. Department of State Travel Advisories"""
 
-    def fetch(self) -> BeautifulSoup:
-        response = requests.get(self.url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
 
@@ -49,14 +44,14 @@ class USStateDeptScraper(BaseScraper):
                     "date": None,
                     "description": "",
                     "url": link,
-                    "scraped_at": datetime.now(timezone.utc).isoformat()
+                    "scraped_at": datetime.utcnow().isoformat()
                 })
 
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Skipping item: {e}")
                 continue
 
         return advisories
-
 
 # ==========================================================
 # UK FCDO
@@ -65,35 +60,31 @@ class USStateDeptScraper(BaseScraper):
 class UKFCDOScraper(BaseScraper):
     """Scraper for UK Foreign Travel Advice"""
 
-    def fetch(self) -> BeautifulSoup:
-        response = requests.get(self.url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
 
-        country_links = soup.find_all("a", href=re.compile(r"/foreign-travel-advice/"))
+        advisory_items = soup.find_all("a", href=re.compile(r"/traveladvisories/"))
 
-        for link in country_links:
+        for item in advisory_items:
             try:
-                country = link.get_text(strip=True)
-                url = link["href"]
+                country = item.get_text(strip=True)
+                link = item["href"]
 
-                if not url.startswith("http"):
-                    url = f"https://www.gov.uk{url}"
+                if not link.startswith("http"):
+                    link = f"https://travel.state.gov{link}"
 
                 advisories.append({
-                    "source": "UK FCDO",
+                    "source": "UK Foreign Travel",
                     "country": country,
                     "risk_level": "See advisory page",
                     "date": None,
                     "description": "",
-                    "url": url,
-                    "scraped_at": datetime.now(timezone.utc).isoformat()
+                    "url": link,
+                    "scraped_at": datetime.utcnow().isoformat()
                 })
 
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Skipping item: {e}")
                 continue
 
         return advisories
@@ -105,36 +96,31 @@ class UKFCDOScraper(BaseScraper):
 
 class SmartTravellerScraper(BaseScraper):
     """Scraper for Australian Smart Traveller"""
-
-    def fetch(self) -> BeautifulSoup:
-        response = requests.get(self.url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
 
-        links = soup.find_all("a", href=re.compile(r"/destinations/"))
+        advisory_items = soup.find_all("a", href=re.compile(r"/traveladvisories/"))
 
-        for link in links:
+        for item in advisory_items:
             try:
-                country = link.get_text(strip=True)
-                url = link["href"]
+                country = item.get_text(strip=True)
+                link = item["href"]
 
-                if not url.startswith("http"):
-                    url = f"https://www.smartraveller.gov.au{url}"
+                if not link.startswith("http"):
+                    link = f"https://travel.state.gov{link}"
 
                 advisories.append({
-                    "source": "Smart Traveller (Australia)",
+                    "source": "Smart Traveller",
                     "country": country,
                     "risk_level": "See advisory page",
                     "date": None,
                     "description": "",
-                    "url": url,
-                    "scraped_at": datetime.now(timezone.utc).isoformat()
+                    "url": link,
+                    "scraped_at": datetime.utcnow().isoformat()
                 })
 
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Skipping item: {e}")
                 continue
 
         return advisories
@@ -146,24 +132,18 @@ class SmartTravellerScraper(BaseScraper):
 
 class CanadaTravelScraper(BaseScraper):
     """Scraper for Canada Travel Advisories"""
-
-    def fetch(self) -> BeautifulSoup:
-        response = requests.get(self.url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
 
-        links = soup.find_all("a", href=re.compile(r"/destinations/"))
+        advisory_items = soup.find_all("a", href=re.compile(r"/traveladvisories/"))
 
-        for link in links:
+        for item in advisory_items:
             try:
-                country = link.get_text(strip=True)
-                url = link["href"]
+                country = item.get_text(strip=True)
+                link = item["href"]
 
-                if not url.startswith("http"):
-                    url = f"https://travel.gc.ca{url}"
+                if not link.startswith("http"):
+                    link = f"https://travel.state.gov{link}"
 
                 advisories.append({
                     "source": "Canada Travel",
@@ -171,11 +151,13 @@ class CanadaTravelScraper(BaseScraper):
                     "risk_level": "See advisory page",
                     "date": None,
                     "description": "",
-                    "url": url,
-                    "scraped_at": datetime.now(timezone.utc).isoformat()
+                    "url": link,
+                    "scraped_at": datetime.utcnow().isoformat()
                 })
 
-            except Exception:
+            except Exception as e:
+                logger.warning(f"Skipping item: {e}")
                 continue
 
         return advisories
+
