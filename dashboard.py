@@ -175,22 +175,15 @@ def main():
 
     source_filter = None if source_input == "All" else source_input
     country_filter = country_input if country_input.strip() else None
-<<<<<<< HEAD
     df = load_data(
         country_filter=country_filter,
         source_filter=source_filter,
         days_back=days_back,
     )
-=======
-
-        # Step 2: Clean
-        cleaned_advisories = clean_data(advisories)
->>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
 
         # Step 3: Store
         store_data(cleaned_advisories)
 
-<<<<<<< HEAD
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Advisories (filtered)", len(df))
@@ -290,10 +283,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-=======
-        print("\nPipeline completed successfully!")
-
-    except Exception as e:
-        print(f"\nError in pipeline: {e}")
-        raise
->>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
