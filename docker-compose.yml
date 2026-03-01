@@ -49,6 +49,28 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    environment:
+      DB_BACKEND: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  dashboard_direct:
+    build: .
+    restart: unless-stopped
+    profiles: ["direct"]
+    command: streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
       - "8501:8501"
     environment:

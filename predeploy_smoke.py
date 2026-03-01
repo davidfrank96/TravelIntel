@@ -40,11 +40,10 @@ def main():
     print("[1/4] Scraping UK FCDO sample...")
     scraper = UKFCDOScraper(
         url=config.TARGET_URLS["uk_fcdo"],
-        proxy_manager=None,
-        use_playwright=False,
     )
     raw = scraper.scrape()
-    scraper.close()
+    if hasattr(scraper, "close"):
+        scraper.close()
     if not raw:
         fail("No advisories scraped from UK FCDO sample.")
     print(f"[OK] scraped={len(raw)}")

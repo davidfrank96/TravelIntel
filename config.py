@@ -43,7 +43,7 @@ SCRAPER_CONFIG = {
     'timeout': 30000,  # milliseconds
     'wait_time': 3,  # seconds
     'user_agent_rotation': True,
-    'respect_robots_txt': False  # Set to True in production
+    'respect_robots_txt': os.getenv('RESPECT_ROBOTS_TXT', 'true').strip().lower() in {'1', 'true', 'yes'}
 }
 
 # Target URLs

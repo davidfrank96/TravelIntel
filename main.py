@@ -14,7 +14,6 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from tqdm import tqdm
 
 import config
-from proxy_manager import ProxyManager
 from scrapers import (
     USStateDeptScraper,
     UKFCDOScraper,
@@ -30,16 +29,6 @@ class TravelAdvisoryPipeline:
     """Main pipeline for scraping, cleaning, and storing travel advisories"""
 
     def __init__(self):
-        self.proxy_manager = None
-        if config.PROXY_CONFIG["proxies"]:
-            self.proxy_manager = ProxyManager(
-                proxies=config.PROXY_CONFIG["proxies"],
-                rotation_strategy=config.PROXY_CONFIG["rotation_strategy"],
-            )
-            print(f"Proxy manager initialized with {len(config.PROXY_CONFIG['proxies'])} proxies")
-        else:
-            print("Warning: No proxies configured. Running without proxy rotation.")
-
         self.cleaner = DataCleaner()
         self.db = None
         self.health_state = {
@@ -64,7 +53,6 @@ class TravelAdvisoryPipeline:
     def scrape_all(self) -> List[Dict]:
         """Scrape all configured sources."""
         all_advisories = []
-        use_playwright = os.getenv("USE_PLAYWRIGHT", "false").strip().lower() in {"1", "true", "yes"}
 
         print("\n" + "=" * 60)
         print("Starting Scraping Process")
@@ -73,11 +61,7 @@ class TravelAdvisoryPipeline:
         for source_name, (scraper_class, url) in tqdm(self.scrapers.items(), desc="Scraping sources"):
             print(f"\nScraping {source_name}...")
             try:
-                scraper = scraper_class(
-                    url=url,
-                    proxy_manager=self.proxy_manager,
-                    use_playwright=use_playwright,
-                )
+                scraper = scraper_class(url=url)
                 advisories = scraper.scrape()
 
                 if advisories:
@@ -86,7 +70,8 @@ class TravelAdvisoryPipeline:
                 else:
                     print(f"  - No advisories found from {source_name}")
 
-                scraper.close()
+                if hasattr(scraper, "close"):
+                    scraper.close()
                 time.sleep(1.5)
             except Exception as e:
                 print(f"  - Error scraping {source_name}: {e}")
@@ -152,7 +137,26 @@ class TravelAdvisoryPipeline:
                     self.end_headers()
                     return
                 state = dict(pipeline.health_state)
-                code = 200 if state.get("status") in {"idle", "running", "ok"} else 503
+                status = state.get("status")
+                code = 200 if status in {"idle", "running", "ok"} else 503
+
+                # If a run is stuck in "running" for too long, report unhealthy.
+                if status == "running":
+                    started_at = state.get("last_run_started_at")
+                    max_running_minutes = int(os.getenv("SCRAPER_MAX_RUNNING_MINUTES", "30"))
+                    if started_at:
+                        try:
+                            started = datetime.fromisoformat(started_at)
+                            elapsed_min = (datetime.utcnow() - started).total_seconds() / 60.0
+                            if elapsed_min > max_running_minutes:
+                                code = 503
+                                state["status"] = "error"
+                                state["last_error"] = (
+                                    f"pipeline running for {elapsed_min:.1f} minutes "
+                                    f"(limit {max_running_minutes})"
+                                )
+                        except Exception:
+                            pass
                 body = json.dumps(state).encode("utf-8")
                 self.send_response(code)
                 self.send_header("Content-Type", "application/json")

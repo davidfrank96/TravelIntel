@@ -5,14 +5,9 @@ HTTP-based scraping (No Playwright)
 """
 
 import re
-<<<<<<< HEAD
 import time
 import os
 from datetime import datetime
-=======
-import requests
-from datetime import datetime, timezone
->>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
 from typing import List, Dict
 from bs4 import BeautifulSoup
 import requests
@@ -70,7 +65,6 @@ class USStateDeptScraper(BaseScraper):
 # ==========================================================
 
 class UKFCDOScraper(BaseScraper):
-<<<<<<< HEAD
     """Scraper for UK Foreign, Commonwealth & Development Office"""
 
     def _extract_uk_risk_level(self, text: str) -> str:
@@ -113,18 +107,8 @@ class UKFCDOScraper(BaseScraper):
         except Exception:
             return {"risk_level": "Unknown", "description": ""}
     
-=======
-    """Scraper for UK Foreign Travel Advice"""
-
-    def fetch(self) -> BeautifulSoup:
-        response = requests.get(self.url, headers=HEADERS, timeout=20)
-        response.raise_for_status()
-        return BeautifulSoup(response.text, "html.parser")
-
->>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
-<<<<<<< HEAD
         
         try:
             # UK gov.uk structure - find country links/entries
@@ -178,32 +162,6 @@ class UKFCDOScraper(BaseScraper):
         except Exception as e:
             print(f"Error parsing UK FCDO page: {e}")
         
-=======
-
-        country_links = soup.find_all("a", href=re.compile(r"/foreign-travel-advice/"))
-
-        for link in country_links:
-            try:
-                country = link.get_text(strip=True)
-                url = link["href"]
-
-                if not url.startswith("http"):
-                    url = f"https://www.gov.uk{url}"
-
-                advisories.append({
-                    "source": "UK FCDO",
-                    "country": country,
-                    "risk_level": "See advisory page",
-                    "date": None,
-                    "description": "",
-                    "url": url,
-                    "scraped_at": datetime.now(timezone.utc).isoformat()
-                })
-
-            except Exception:
-                continue
-
->>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
         return advisories
 
 

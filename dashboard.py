@@ -1,6 +1,8 @@
 """
-Main Orchestration Script for Travel Advisory Scraper
-HTTP-only, manual scraping (no Playwright/Selenium)
+Streamlit dashboard for Travel Security / Safety insights.
+
+Run with:
+    streamlit run dashboard.py
 """
 
 from datetime import datetime, timedelta
@@ -13,9 +15,7 @@ from dashboard_utils import add_reason_columns, coerce_bool_series, ensure_analy
 from db_factory import get_handler
 
 
-def scrape_all() -> List[Dict]:
-    """Scrape all configured sources via HTTP requests only"""
-    all_advisories = []
+st.set_page_config(page_title="Travel Security Dashboard", layout="wide")
 
 
 @st.cache_data(show_spinner=False)
@@ -30,28 +30,8 @@ def load_data(country_filter=None, source_filter=None, days_back: int = 365):
     finally:
         db.close()
 
-            if advisories:
-                print(f"  ✓ Found {len(advisories)} advisories from {source_name}")
-                all_advisories.extend(advisories)
-            else:
-                print(f"  ✗ No advisories found from {source_name}")
-
-            # Rate limiting
-            time.sleep(2)
-
-        except Exception as e:
-            print(f"  ✗ Error scraping {source_name}: {e}")
-            continue
-
-    print(f"\nTotal advisories scraped: {len(all_advisories)}")
-    return all_advisories
-
-
-def clean_data(advisories: List[Dict]) -> List[Dict]:
-    """Clean and normalize scraped data"""
-    print("\n" + "=" * 60)
-    print("Cleaning Data")
-    print("=" * 60)
+    if not advisories:
+        return pd.DataFrame()
 
     df = pd.DataFrame(advisories)
     df = ensure_analyzed_columns(df)
@@ -75,10 +55,11 @@ def summarize_location(df_country: pd.DataFrame) -> str:
     if df_country.empty:
         return "No recent advisories for this location."
 
-    # Avoid producing false "all clear" when source rows are metadata-only with no content.
-    meaningful = df_country[
-        df_country.get("description_cleaned", pd.Series(dtype=str)).fillna("").str.strip().str.len() >= 40
-    ] if "description_cleaned" in df_country.columns else df_country
+    meaningful = (
+        df_country[df_country.get("description_cleaned", pd.Series(dtype=str)).fillna("").str.strip().str.len() >= 40]
+        if "description_cleaned" in df_country.columns
+        else df_country
+    )
     if meaningful.empty and "description" in df_country.columns:
         meaningful = df_country[df_country["description"].fillna("").str.strip().str.len() >= 40]
     if meaningful.empty:
@@ -109,9 +90,7 @@ def summarize_location(df_country: pd.DataFrame) -> str:
         and not insight.has_safety_issues
         and not insight.has_serenity_issues
     ):
-        parts.append(
-            "No major security / safety / serenity issues explicitly mentioned in recent advisories."
-        )
+        parts.append("No major security / safety / serenity issues explicitly mentioned in recent advisories.")
 
     if "risk_reason" in meaningful.columns:
         reason_rows = meaningful[meaningful["risk_reason"].fillna("").str.strip().str.len() > 0]
@@ -119,18 +98,14 @@ def summarize_location(df_country: pd.DataFrame) -> str:
         reason_rows = pd.DataFrame()
 
     if not reason_rows.empty:
-        top_reason = (
-            reason_rows.sort_values("date", ascending=False).iloc[0].get("risk_reason", "")
-        )
-        top_keywords = (
-            reason_rows.sort_values("date", ascending=False).iloc[0].get("risk_keywords", "")
-        )
+        latest_reason = reason_rows.sort_values("date", ascending=False).iloc[0]
+        top_reason = latest_reason.get("risk_reason", "")
+        top_keywords = latest_reason.get("risk_keywords", "")
         if top_reason:
             parts.append(f"**Why unsafe:** {top_reason}")
         if top_keywords:
             parts.append(f"**Key risk keywords:** {top_keywords}")
-    elif insight.latest_summary and insight.risk_grade in {"D", "E", "C"}:
-        # Fallback only when risk is elevated and no extracted reason exists.
+    elif insight.latest_summary and insight.risk_grade in {"C", "D", "E"}:
         parts.append(f'Latest signal: "{insight.latest_summary}"')
 
     if insight.security_highlights:
@@ -155,9 +130,7 @@ def main():
     st.title("Travel Security & Safety Dashboard")
     st.sidebar.header("Filters")
 
-    country_input = st.sidebar.text_input(
-        "Country (optional, partial name allowed)", value=""
-    )
+    country_input = st.sidebar.text_input("Country (optional, partial name allowed)", value="")
     source_input = st.sidebar.selectbox(
         "Source",
         options=[
@@ -169,20 +142,15 @@ def main():
             "Canada Travel",
         ],
     )
-    days_back = st.sidebar.slider(
-        "Look back (days)", min_value=30, max_value=730, value=365, step=30
-    )
+    days_back = st.sidebar.slider("Look back (days)", min_value=30, max_value=730, value=365, step=30)
 
     source_filter = None if source_input == "All" else source_input
     country_filter = country_input if country_input.strip() else None
-    df = load_data(
-        country_filter=country_filter,
-        source_filter=source_filter,
-        days_back=days_back,
-    )
+    df = load_data(country_filter=country_filter, source_filter=source_filter, days_back=days_back)
 
-        # Step 3: Store
-        store_data(cleaned_advisories)
+    if df.empty:
+        st.info("No advisories found for the selected filters.")
+        return
 
     col1, col2, col3, col4 = st.columns(4)
     with col1:
