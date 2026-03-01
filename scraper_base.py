@@ -1,49 +1,67 @@
 """
-Base Scraper for Travel Advisory Sites
-Uses only HTTP requests + BeautifulSoup
+Production Base Scraper
+Reusable session + retries + logging
 """
+
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional
 from datetime import datetime
 import requests
 from bs4 import BeautifulSoup
-from fake_useragent import UserAgent
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+import logging
 import config
 
+
+logger = logging.getLogger(__name__)
+
+
 class BaseScraper(ABC):
-    """Base class for all scrapers using requests only"""
 
     def __init__(self, url: str):
         self.url = url
-        self.ua = UserAgent()
+        self.session = self._create_session()
 
-    def get_random_user_agent(self) -> str:
-        return self.ua.random
+    def _create_session(self):
+        session = requests.Session()
 
-    def fetch_with_requests(self) -> Optional[BeautifulSoup]:
-        """Fetch page using requests library"""
-        headers = {
-            'User-Agent': self.get_random_user_agent(),
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-        }
+        retries = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504],
+        )
 
+        adapter = HTTPAdapter(max_retries=retries)
+        session.mount("http://", adapter)
+        session.mount("https://", adapter)
+
+        session.headers.update({
+            "User-Agent": "TravelIntelBot/1.0",
+            "Accept": "text/html",
+        })
+
+        return session
+
+    def fetch(self) -> Optional[BeautifulSoup]:
         try:
-            response = requests.get(self.url, headers=headers, timeout=config.SCRAPER_CONFIG['timeout'])
+            response = self.session.get(
+                self.url,
+                timeout=config.SCRAPER_CONFIG["timeout"],
+            )
             response.raise_for_status()
-            return BeautifulSoup(response.content, 'lxml')
+            return BeautifulSoup(response.text, "lxml")
+
         except Exception as e:
-            print(f"Error fetching {self.url}: {e}")
+            logger.error(f"Failed fetching {self.url}: {e}")
             return None
 
     @abstractmethod
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
-        """Parse scraped content - must be implemented by subclasses"""
         pass
 
     def scrape(self) -> List[Dict]:
-        """Fetch + parse"""
-        soup = self.fetch_with_requests()
+        soup = self.fetch()
         if soup:
             return self.parse(soup)
         return []
