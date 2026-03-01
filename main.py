@@ -4,7 +4,11 @@ Main Orchestration Script for Travel Advisory Scraper
 import os
 import time
 import schedule
+import threading
+import json
 from typing import List, Dict
+from datetime import datetime
+from http.server import BaseHTTPRequestHandler, HTTPServer
 
 from tqdm import tqdm
 
@@ -35,8 +39,18 @@ class TravelAdvisoryPipeline:
         else:
             print("Warning: No proxies configured. Running without proxy rotation.")
 
-        self.db = get_handler()
         self.cleaner = DataCleaner()
+        self.db = None
+        self.health_state = {
+            "status": "idle",
+            "last_run_started_at": None,
+            "last_run_finished_at": None,
+            "last_scraped_count": 0,
+            "last_stored_count": 0,
+            "last_error": "",
+        }
+        self._health_server = None
+        self._health_thread = None
 
         self.scrapers = {
             "us_state_dept": (USStateDeptScraper, config.TARGET_URLS["us_state_dept"]),
@@ -108,8 +122,50 @@ class TravelAdvisoryPipeline:
         print("\n" + "=" * 60)
         print("Storing Data in Database")
         print("=" * 60)
+        if self.db is None:
+            raise RuntimeError("Database connection not initialized.")
         inserted_count = self.db.insert_advisories(advisories)
         print(f"Inserted/Updated {inserted_count} advisories in the database.")
+        self.health_state["last_stored_count"] = int(inserted_count)
+
+    def _ensure_db(self):
+        if self.db is None:
+            self.db = get_handler()
+
+    def _close_db(self):
+        if self.db is not None:
+            self.db.close()
+            self.db = None
+
+    def _start_health_server(self, port: int):
+        """Expose lightweight health endpoint for container healthchecks."""
+        if self._health_server is not None:
+            return
+
+        pipeline = self
+
+        class HealthHandler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                if self.path not in {"/health", "/healthz"}:
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                state = dict(pipeline.health_state)
+                code = 200 if state.get("status") in {"idle", "running", "ok"} else 503
+                body = json.dumps(state).encode("utf-8")
+                self.send_response(code)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+            def log_message(self, fmt, *args):
+                return
+
+        self._health_server = HTTPServer(("0.0.0.0", port), HealthHandler)
+        self._health_thread = threading.Thread(target=self._health_server.serve_forever, daemon=True)
+        self._health_thread.start()
+        print(f"Scraper health endpoint running on :{port}/healthz")
 
     def run_full_pipeline(self):
         """Run the complete pipeline."""
@@ -117,9 +173,19 @@ class TravelAdvisoryPipeline:
         print("TRAVEL ADVISORY SCRAPER PIPELINE")
         print("=" * 60)
         try:
+            self.health_state["status"] = "running"
+            self.health_state["last_run_started_at"] = datetime.utcnow().isoformat()
+            self.health_state["last_error"] = ""
+            self.health_state["last_scraped_count"] = 0
+            self.health_state["last_stored_count"] = 0
+            self._ensure_db()
+
             advisories = self.scrape_all()
+            self.health_state["last_scraped_count"] = int(len(advisories))
             if not advisories:
                 print("No advisories scraped. Exiting.")
+                self.health_state["status"] = "ok"
+                self.health_state["last_run_finished_at"] = datetime.utcnow().isoformat()
                 return
 
             cleaned_advisories = self.clean_data(advisories)
@@ -128,15 +194,22 @@ class TravelAdvisoryPipeline:
             print("\n" + "=" * 60)
             print("Pipeline completed successfully!")
             print("=" * 60)
+            self.health_state["status"] = "ok"
+            self.health_state["last_run_finished_at"] = datetime.utcnow().isoformat()
         except Exception as e:
             print(f"\nError in pipeline: {e}")
+            self.health_state["status"] = "error"
+            self.health_state["last_error"] = str(e)
+            self.health_state["last_run_finished_at"] = datetime.utcnow().isoformat()
             raise
         finally:
-            self.db.close()
+            self._close_db()
 
     def run_scheduled(self, interval_hours: int = 6):
         """Run pipeline on a schedule."""
         print(f"Scheduling pipeline to run every {interval_hours} hours")
+        health_port = int(os.getenv("SCRAPER_HEALTH_PORT", "8081"))
+        self._start_health_server(health_port)
         schedule.every(interval_hours).hours.do(self.run_full_pipeline)
         self.run_full_pipeline()
         while True:
@@ -154,9 +227,18 @@ def main():
         default=0,
         help="Run on schedule (interval in hours, 0 = run once)",
     )
+    parser.add_argument(
+        "--health-port",
+        type=int,
+        default=int(os.getenv("SCRAPER_HEALTH_PORT", "8081")),
+        help="Scraper health endpoint port",
+    )
     args = parser.parse_args()
+    os.environ["SCRAPER_HEALTH_PORT"] = str(args.health_port)
 
     pipeline = TravelAdvisoryPipeline()
+    if args.schedule <= 0:
+        pipeline._start_health_server(args.health_port)
     if args.schedule > 0:
         pipeline.run_scheduled(interval_hours=args.schedule)
     else:

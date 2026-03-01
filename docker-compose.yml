@@ -1,52 +1,105 @@
-version: '3.8'
-
 services:
   db:
     image: postgres:15-alpine
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DB_USER:-postgres}
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-travel_secure_pass}
-      POSTGRES_DB: ${DB_NAME:-travel_advisories}
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER} -d ${DB_NAME} -h 127.0.0.1"]
+      interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 8
+      start_period: 20s
 
   scraper:
     build: .
-    restart: always
-    command: python main.py --schedule 6
+    restart: unless-stopped
+    command: python main.py --schedule 6 --health-port 8081
     depends_on:
       db:
         condition: service_healthy
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-travel_secure_pass}
-      - DB_NAME=${DB_NAME:-travel_advisories}
+      DB_BACKEND: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+      USE_PLAYWRIGHT: ${USE_PLAYWRIGHT:-false}
+      FCDO_MAX_ROWS: ${FCDO_MAX_ROWS:-80}
+      SCRAPER_HEALTH_PORT: 8081
     volumes:
       - ./data:/app/data
       - ./models:/app/models
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8081/healthz', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   dashboard:
     build: .
-    restart: always
+    restart: unless-stopped
     command: streamlit run dashboard.py --server.port 8501 --server.address 0.0.0.0
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     ports:
       - "8501:8501"
     environment:
-      - DB_HOST=db
-      - DB_PORT=5432
-      - DB_USER=${DB_USER:-postgres}
-      - DB_PASSWORD=${DB_PASSWORD:-travel_secure_pass}
-      - DB_NAME=${DB_NAME:-travel_advisories}
+      DB_BACKEND: postgres
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_NAME: ${DB_NAME}
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://127.0.0.1:8501/_stcore/health', timeout=5).read()\""]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: ["proxy"]
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    ports:
+      - "80:80"
+    volumes:
+      - ./deploy/nginx/nginx-http.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  nginx_tls:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    profiles: ["proxy-tls"]
+    depends_on:
+      dashboard:
+        condition: service_healthy
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/nginx/nginx-tls.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./deploy/certs:/etc/nginx/certs:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1/healthz >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 
 volumes:
   postgres_data:

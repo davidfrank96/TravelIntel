@@ -6,13 +6,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
+def _require_env(name: str) -> str:
+    """Read a required environment variable and fail fast if missing."""
+    value = os.getenv(name)
+    if value is None or str(value).strip() == "":
+        raise RuntimeError(f"Missing required environment variable: {name}")
+    return value
+
 # Database Configuration
 DATABASE_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': os.getenv('DB_PORT', '5432'),
-    'database': os.getenv('DB_NAME', 'travel_advisories'),
-    'user': os.getenv('DB_USER', 'postgres'),
-    'password': os.getenv('DB_PASSWORD', 'ApexB')
+    'host': _require_env('DB_HOST'),
+    'port': _require_env('DB_PORT'),
+    'database': _require_env('DB_NAME'),
+    'user': _require_env('DB_USER'),
+    'password': _require_env('DB_PASSWORD')
 }
 
 # Proxy Configuration
