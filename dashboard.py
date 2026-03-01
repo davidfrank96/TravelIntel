@@ -1,8 +1,6 @@
 """
-Streamlit dashboard for Travel Security / Safety insights.
-
-Run with:
-    streamlit run dashboard.py
+Main Orchestration Script for Travel Advisory Scraper
+HTTP-only, manual scraping (no Playwright/Selenium)
 """
 
 from datetime import datetime, timedelta
@@ -15,7 +13,9 @@ from dashboard_utils import add_reason_columns, coerce_bool_series, ensure_analy
 from db_factory import get_handler
 
 
-st.set_page_config(page_title="Travel Security Dashboard", layout="wide")
+def scrape_all() -> List[Dict]:
+    """Scrape all configured sources via HTTP requests only"""
+    all_advisories = []
 
 
 @st.cache_data(show_spinner=False)
@@ -30,8 +30,28 @@ def load_data(country_filter=None, source_filter=None, days_back: int = 365):
     finally:
         db.close()
 
-    if not advisories:
-        return pd.DataFrame()
+            if advisories:
+                print(f"  ✓ Found {len(advisories)} advisories from {source_name}")
+                all_advisories.extend(advisories)
+            else:
+                print(f"  ✗ No advisories found from {source_name}")
+
+            # Rate limiting
+            time.sleep(2)
+
+        except Exception as e:
+            print(f"  ✗ Error scraping {source_name}: {e}")
+            continue
+
+    print(f"\nTotal advisories scraped: {len(all_advisories)}")
+    return all_advisories
+
+
+def clean_data(advisories: List[Dict]) -> List[Dict]:
+    """Clean and normalize scraped data"""
+    print("\n" + "=" * 60)
+    print("Cleaning Data")
+    print("=" * 60)
 
     df = pd.DataFrame(advisories)
     df = ensure_analyzed_columns(df)
@@ -155,16 +175,22 @@ def main():
 
     source_filter = None if source_input == "All" else source_input
     country_filter = country_input if country_input.strip() else None
+<<<<<<< HEAD
     df = load_data(
         country_filter=country_filter,
         source_filter=source_filter,
         days_back=days_back,
     )
+=======
 
-    if df.empty:
-        st.info("No advisories found for the selected filters.")
-        return
+        # Step 2: Clean
+        cleaned_advisories = clean_data(advisories)
+>>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259
 
+        # Step 3: Store
+        store_data(cleaned_advisories)
+
+<<<<<<< HEAD
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("Advisories (filtered)", len(df))
@@ -264,3 +290,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+=======
+        print("\nPipeline completed successfully!")
+
+    except Exception as e:
+        print(f"\nError in pipeline: {e}")
+        raise
+>>>>>>> d16a7338d4142c9831050178acaf221ce6c4b259

@@ -1,5 +1,6 @@
 """
-Main Orchestration Script for Travel Advisory Scraper
+Manual Travel Advisory Scraper Pipeline
+HTTP-only scraping, no scheduler
 """
 import os
 import time
