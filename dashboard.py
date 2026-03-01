@@ -10,10 +10,9 @@ from datetime import datetime, timedelta
 import pandas as pd
 import streamlit as st
 
-from database_sqlite import DatabaseHandler
-from data_cleaner import DataCleaner
 from ai_predictor import InsightAnalyzer
-from nlp_vectorizer import LemmatizingTfidfVectorizer
+from dashboard_utils import add_reason_columns, coerce_bool_series, ensure_analyzed_columns
+from db_factory import get_handler
 
 
 st.set_page_config(page_title="Travel Security Dashboard", layout="wide")
@@ -21,7 +20,7 @@ st.set_page_config(page_title="Travel Security Dashboard", layout="wide")
 
 @st.cache_data(show_spinner=False)
 def load_data(country_filter=None, source_filter=None, days_back: int = 365):
-    db = DatabaseHandler()
+    db = get_handler()
     try:
         advisories = db.get_advisories(
             country=country_filter,
@@ -34,46 +33,48 @@ def load_data(country_filter=None, source_filter=None, days_back: int = 365):
     if not advisories:
         return pd.DataFrame()
 
-    cleaner = DataCleaner()
-    cleaned = cleaner.clean_batch(advisories)
-    df = cleaner.create_dataframe(cleaned)
+    df = pd.DataFrame(advisories)
+    df = ensure_analyzed_columns(df)
+    df = add_reason_columns(df)
+
+    if "date" in df.columns and "scraped_at" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
+        df["scraped_at"] = pd.to_datetime(df["scraped_at"], errors="coerce")
+        df["date"] = df["date"].fillna(df["scraped_at"])
+
+    if "date" in df.columns:
+        df["date"] = pd.to_datetime(df["date"], errors="coerce")
 
     cutoff = datetime.utcnow() - timedelta(days=days_back)
-    if "date" in df.columns:
-        df = df[df["date"] >= cutoff]
-
+    df = df.dropna(subset=["date"])
+    df = df[df["date"] >= cutoff]
     return df
-
-
-def classify_dimensions(df: pd.DataFrame) -> pd.DataFrame:
-    analyzer = InsightAnalyzer()
-
-    def row_fn(row: pd.Series):
-        return analyzer._classify_dimensions_row(row)  # internal helper, but fine for UI
-
-    dims = df.apply(row_fn, axis=1, result_type="expand")
-    # Ensure boolean columns are actual booleans
-    for col in ['security', 'safety', 'serenity']:
-        if col in dims.columns:
-            dims[col] = dims[col].astype(bool)
-    return pd.concat([df, dims], axis=1)
 
 
 def summarize_location(df_country: pd.DataFrame) -> str:
     if df_country.empty:
         return "No recent advisories for this location."
 
+    # Avoid producing false "all clear" when source rows are metadata-only with no content.
+    meaningful = df_country[
+        df_country.get("description_cleaned", pd.Series(dtype=str)).fillna("").str.strip().str.len() >= 40
+    ] if "description_cleaned" in df_country.columns else df_country
+    if meaningful.empty and "description" in df_country.columns:
+        meaningful = df_country[df_country["description"].fillna("").str.strip().str.len() >= 40]
+    if meaningful.empty:
+        return (
+            "No detailed advisory text found for this location yet. "
+            "Try re-running the scraper to pull full country advisory pages."
+        )
+
     analyzer = InsightAnalyzer()
-    # convert back to list-of-dicts for the analyzer API
-    records = df_country.to_dict(orient="records")
-    example_country = df_country["country_normalized"].iloc[0]
+    records = meaningful.to_dict(orient="records")
+    example_country = meaningful["country_normalized"].iloc[0]
     insight = analyzer.summarize_country(records, example_country)
     if not insight:
         return "No recent advisories for this location."
 
     parts = []
-
-    # Overall grade + textual risk level
     grade = insight.risk_grade or "U"
     parts.append(f"Overall risk rating: **{grade}** ({insight.risk_level_text}).")
 
@@ -82,9 +83,7 @@ def summarize_location(df_country: pd.DataFrame) -> str:
     if insight.has_safety_issues:
         parts.append("**Safety** issues reported (health / disasters / accidents).")
     if insight.has_serenity_issues:
-        parts.append(
-            "**Serenity** impacted (protests / strikes / political tension)."
-        )
+        parts.append("**Serenity** impacted (protests / strikes / political tension).")
     if (
         not insight.has_security_issues
         and not insight.has_safety_issues
@@ -94,18 +93,31 @@ def summarize_location(df_country: pd.DataFrame) -> str:
             "No major security / safety / serenity issues explicitly mentioned in recent advisories."
         )
 
-    if insight.latest_summary:
-        parts.append(
-            f'Most recent advisory summary: “{insight.latest_summary}”'
-        )
+    if "risk_reason" in meaningful.columns:
+        reason_rows = meaningful[meaningful["risk_reason"].fillna("").str.strip().str.len() > 0]
+    else:
+        reason_rows = pd.DataFrame()
 
-    # Security highlights
+    if not reason_rows.empty:
+        top_reason = (
+            reason_rows.sort_values("date", ascending=False).iloc[0].get("risk_reason", "")
+        )
+        top_keywords = (
+            reason_rows.sort_values("date", ascending=False).iloc[0].get("risk_keywords", "")
+        )
+        if top_reason:
+            parts.append(f"**Why unsafe:** {top_reason}")
+        if top_keywords:
+            parts.append(f"**Key risk keywords:** {top_keywords}")
+    elif insight.latest_summary and insight.risk_grade in {"D", "E", "C"}:
+        # Fallback only when risk is elevated and no extracted reason exists.
+        parts.append(f'Latest signal: "{insight.latest_summary}"')
+
     if insight.security_highlights:
         parts.append("\n**Key security highlights:**")
         for h in insight.security_highlights:
             parts.append(f"- {h}")
 
-    # Do's and Don'ts
     if insight.dos:
         parts.append("\n**Do's (recommended actions):**")
         for d in insight.dos:
@@ -121,7 +133,6 @@ def summarize_location(df_country: pd.DataFrame) -> str:
 
 def main():
     st.title("Travel Security & Safety Dashboard")
-
     st.sidebar.header("Filters")
 
     country_input = st.sidebar.text_input(
@@ -144,7 +155,6 @@ def main():
 
     source_filter = None if source_input == "All" else source_input
     country_filter = country_input if country_input.strip() else None
-
     df = load_data(
         country_filter=country_filter,
         source_filter=source_filter,
@@ -155,73 +165,52 @@ def main():
         st.info("No advisories found for the selected filters.")
         return
 
-    df = classify_dimensions(df)
-
     col1, col2, col3, col4 = st.columns(4)
-
     with col1:
         st.metric("Advisories (filtered)", len(df))
-
     with col2:
         n_high = (df.get("risk_score", 0) >= 3).sum()
         st.metric("High/Very High Risk", int(n_high))
-
     with col3:
         st.metric("Countries covered", df["country_normalized"].nunique())
-
     with col4:
         latest_date = df["date"].max()
-        st.metric(
-            "Last updated",
-            latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "N/A",
-        )
+        st.metric("Last updated", latest_date.strftime("%Y-%m-%d") if pd.notna(latest_date) else "N/A")
 
     st.subheader("Location insights")
-
     all_countries = sorted(df["country_normalized"].dropna().unique())
     default_country = all_countries[0] if all_countries else None
-
     country_focus = st.selectbox(
         "Focus country",
         options=all_countries,
-        index=all_countries.index(default_country)
-        if default_country in all_countries
-        else 0,
+        index=all_countries.index(default_country) if default_country in all_countries else 0,
     )
 
     df_country = df[df["country_normalized"] == country_focus]
-
     st.markdown(f"### {country_focus}: Risk Rating & Guidance")
     st.markdown(summarize_location(df_country))
 
     st.markdown("### Concern Categories (this country)")
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        sec_count = (df_country.get("has_security_concerns", False)).sum()
-        st.metric("🛡️ Security Concerns", int(sec_count))
-    
+        sec_count = int(coerce_bool_series(df_country["has_security_concerns"]).sum())
+        st.metric("Security Concerns", sec_count)
     with col2:
-        safe_count = (df_country.get("has_safety_concerns", False)).sum()
-        st.metric("⚕️ Safety Concerns", int(safe_count))
-    
+        safe_count = int(coerce_bool_series(df_country["has_safety_concerns"]).sum())
+        st.metric("Safety Concerns", safe_count)
     with col3:
-        ser_count = (df_country.get("has_serenity_concerns", False)).sum()
-        st.metric("☮️ Serenity Concerns", int(ser_count))
+        ser_count = int(coerce_bool_series(df_country["has_serenity_concerns"]).sum())
+        st.metric("Serenity Concerns", ser_count)
 
     st.markdown("### Risk level distribution (this country)")
     if "risk_level_normalized" in df_country.columns:
-        st.bar_chart(
-            df_country["risk_level_normalized"].value_counts().sort_index()
-        )
+        st.bar_chart(df_country["risk_level_normalized"].value_counts().sort_index())
 
     st.markdown("### Top Keywords (this country)")
-    # Extract keywords from all descriptions
     all_keywords = []
     for keywords_list in df_country.get("keywords", []):
         if isinstance(keywords_list, list):
             all_keywords.extend(keywords_list)
-    
     if all_keywords:
         keyword_counts = pd.Series(all_keywords).value_counts().head(15)
         st.bar_chart(keyword_counts)
@@ -233,66 +222,45 @@ def main():
         "source",
         "risk_level_normalized",
         "risk_score",
+        "corpus_risk_grade",
         "date",
-        "keywords",
+        "risk_keywords",
+        "risk_reason",
         "has_security_concerns",
         "has_safety_concerns",
         "has_serenity_concerns",
-        "description_cleaned",
     ]
     cols_existing = [c for c in cols_to_show if c in df_country.columns]
-    
     display_df = df_country[cols_existing].sort_values("date", ascending=False).reset_index(drop=True)
-    
-    # Format boolean columns with emojis
-    if "has_security_concerns" in display_df.columns:
-        display_df["has_security_concerns"] = display_df["has_security_concerns"].apply(
-            lambda x: "🛡️ Yes" if x else "✓"
-        )
-    if "has_safety_concerns" in display_df.columns:
-        display_df["has_safety_concerns"] = display_df["has_safety_concerns"].apply(
-            lambda x: "⚕️ Yes" if x else "✓"
-        )
-    if "has_serenity_concerns" in display_df.columns:
-        display_df["has_serenity_concerns"] = display_df["has_serenity_concerns"].apply(
-            lambda x: "☮️ Yes" if x else "✓"
-        )
-    
-    st.dataframe(
-        display_df,
-        use_container_width=True,
-        height=400,
-    )
+
+    for col in ["has_security_concerns", "has_safety_concerns", "has_serenity_concerns"]:
+        if col in display_df.columns:
+            display_df[col] = coerce_bool_series(display_df[col]).apply(lambda x: "Yes" if x else "No")
+
+    st.dataframe(display_df, use_container_width=True, height=400)
 
     st.markdown("### Global risk by country (filtered dataset)")
     if "risk_score" in df.columns:
         country_risk = (
-            df.groupby("country_normalized")["risk_score"]
-            .mean()
-            .sort_values(ascending=False)
-            .reset_index()
+            df.groupby("country_normalized")["risk_score"].mean().sort_values(ascending=False).reset_index()
         )
         st.bar_chart(country_risk.set_index("country_normalized"))
 
     st.markdown("### Global Concern Summary")
     col1, col2, col3 = st.columns(3)
-    
     with col1:
-        sec_global = (df.get("has_security_concerns", False)).sum()
+        sec_global = int(coerce_bool_series(df["has_security_concerns"]).sum())
         pct_sec = (sec_global / len(df) * 100) if len(df) > 0 else 0
-        st.metric("🛡️ Security Issues (%)", f"{pct_sec:.1f}%")
-    
+        st.metric("Security Issues (%)", f"{pct_sec:.1f}%")
     with col2:
-        safe_global = (df.get("has_safety_concerns", False)).sum()
+        safe_global = int(coerce_bool_series(df["has_safety_concerns"]).sum())
         pct_safe = (safe_global / len(df) * 100) if len(df) > 0 else 0
-        st.metric("⚕️ Safety Issues (%)", f"{pct_safe:.1f}%")
-    
+        st.metric("Safety Issues (%)", f"{pct_safe:.1f}%")
     with col3:
-        ser_global = (df.get("has_serenity_concerns", False)).sum()
+        ser_global = int(coerce_bool_series(df["has_serenity_concerns"]).sum())
         pct_ser = (ser_global / len(df) * 100) if len(df) > 0 else 0
-        st.metric("☮️ Serenity Issues (%)", f"{pct_ser:.1f}%")
+        st.metric("Serenity Issues (%)", f"{pct_ser:.1f}%")
 
 
 if __name__ == "__main__":
     main()
-

@@ -101,6 +101,7 @@ copy .env.example .env
 Edit `.env` and add your database credentials:
 
 ```
+DB_BACKEND=postgres
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=travel_advisories

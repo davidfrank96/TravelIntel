@@ -116,6 +116,22 @@ class InsightAnalyzer:
             df["scraped_at"] = pd.to_datetime(df["scraped_at"], errors="coerce")
         return df
 
+    def _to_bool(self, value) -> bool:
+        """Parse mixed bool-like values safely."""
+        if isinstance(value, bool):
+            return value
+        if value is None:
+            return False
+        if isinstance(value, (int, float)):
+            return value != 0
+        if isinstance(value, str):
+            low = value.strip().lower()
+            if low in {"1", "true", "t", "yes", "y"}:
+                return True
+            if low in {"0", "false", "f", "no", "n", ""}:
+                return False
+        return bool(value)
+
     def _classify_dimensions_row(self, row: pd.Series) -> Dict[str, bool]:
         text = (row.get("description_cleaned") or row.get("description") or "").lower()
         kws = " ".join(row.get("keywords") or []).lower()
@@ -259,11 +275,29 @@ class InsightAnalyzer:
         else:
             risk_text = "Unknown"
 
-        # attach dimensions (drop any pre-existing to avoid duplicate columns)
-        df = df.drop(columns=[c for c in ["security", "safety", "serenity"] if c in df.columns])
-        dims = df.apply(self._classify_dimensions_row, axis=1, result_type="expand")
-        df = pd.concat([df, dims], axis=1)
-        df = df.loc[:, ~df.columns.duplicated()]
+        #   .sort_values(ascending=False)
+        # Heuristic: If risk score is low/unknown but corpus grade indicates high risk, bump it up.
+        # This handles cases where official level parsing fails but text analysis finds danger.
+        if "corpus_risk_grade" in df.columns:
+            # Map A-E to 1-5 roughly
+            grade_map = {'A': 1, 'B': 2, 'C': 3, 'D': 4, 'E': 5}
+            corpus_grades = df["corpus_risk_grade"].map(grade_map).dropna()
+            if not corpus_grades.empty:
+                avg_corpus = corpus_grades.mean()
+                # If official risk is low (<2) or unknown, but corpus is high (>=4 i.e. D/E), force high risk
+                if (avg_risk is None or avg_risk < 2.0) and avg_corpus >= 4.0:
+                    avg_risk = 4.0
+                    risk_text = "High (Text Analysis)"
+
+        # Map DB columns to analyzer columns if they exist, otherwise calculate
+        for db_col, internal_col in [("has_security_concerns", "security"), 
+                                     ("has_safety_concerns", "safety"), 
+                                     ("has_serenity_concerns", "serenity")]:
+            if db_col in df.columns:
+                df[internal_col] = df[db_col].apply(self._to_bool)
+            else:
+                # Fallback to on-the-fly classification if DB column missing
+                df[internal_col] = df.apply(lambda row: self._classify_dimensions_row(row)[internal_col], axis=1)
 
         latest = df.sort_values("date", ascending=False).iloc[0]
         latest_date = latest.get("date")
@@ -299,9 +333,9 @@ class InsightAnalyzer:
         grade = self._risk_grade_from_score(avg_risk)
         
         # Safely check for dimension columns
-        has_sec = bool(df["security"].fillna(False).astype(bool).any()) if "security" in df.columns and len(df) > 0 else False
-        has_safe = bool(df["safety"].fillna(False).astype(bool).any()) if "safety" in df.columns and len(df) > 0 else False
-        has_ser = bool(df["serenity"].fillna(False).astype(bool).any()) if "serenity" in df.columns and len(df) > 0 else False
+        has_sec = bool(df["security"].apply(self._to_bool).any()) if "security" in df.columns and len(df) > 0 else False
+        has_safe = bool(df["safety"].apply(self._to_bool).any()) if "safety" in df.columns and len(df) > 0 else False
+        has_ser = bool(df["serenity"].apply(self._to_bool).any()) if "serenity" in df.columns and len(df) > 0 else False
 
         return CountryInsight(
             country=country_normalized,

@@ -37,6 +37,10 @@ class DataCleaner:
         'exercise increased': 'Exercise Increased Caution',
         'reconsider': 'Reconsider Travel',
         'do not travel': 'Do Not Travel',
+        'advise against all travel': 'Do Not Travel',
+        'all travel': 'Do Not Travel',
+        'advise against all but essential travel': 'Reconsider Travel',
+        'all but essential travel': 'Reconsider Travel',
         'avoid': 'Do Not Travel',
         'high': 'High Risk',
         'medium': 'Medium Risk',
@@ -67,10 +71,16 @@ class DataCleaner:
         self._lemmatizer = WordNetLemmatizer()
         # Load external corpus/keyword lists if available
         self._corpus_keywords = set(self._load_corpus())
+        
+        # Define robust defaults for categorization
+        self.DEFAULT_SECURITY = {'crime', 'terrorism', 'kidnap', 'armed', 'attack', 'robbery', 'violence', 'gang', 'cartel', 'carjacking', 'homicide', 'murder', 'shooting', 'extremist', 'hostage', 'bombing', 'assault', 'mugging', 'theft'}
+        self.DEFAULT_SAFETY = {'health', 'disease', 'epidemic', 'pandemic', 'virus', 'earthquake', 'flood', 'tsunami', 'hurricane', 'cyclone', 'typhoon', 'landslide', 'medical', 'hospital', 'cholera', 'dengue', 'malaria', 'yellow fever', 'zika', 'accident'}
+        self.DEFAULT_SERENITY = {'protest', 'demonstration', 'rally', 'march', 'unrest', 'riot', 'strike', 'political', 'tension', 'curfew', 'emergency', 'disruption', 'civil', 'instability'}
+
         # Load category-specific keywords
-        self._security_keywords = self._load_category_keywords('data/wordlists/security.txt')
-        self._safety_keywords = self._load_category_keywords('data/wordlists/safety.txt')
-        self._serenity_keywords = self._load_category_keywords('data/wordlists/serenity.txt')
+        self._security_keywords = self._load_category_keywords('data/wordlists/security.txt', self.DEFAULT_SECURITY)
+        self._safety_keywords = self._load_category_keywords('data/wordlists/safety.txt', self.DEFAULT_SAFETY)
+        self._serenity_keywords = self._load_category_keywords('data/wordlists/serenity.txt', self.DEFAULT_SERENITY)
 
     def _load_corpus(self, path: str = 'data/wordlists/corpus.txt') -> List[str]:
         """Load keyword corpus from a simple newline-delimited file.
@@ -106,16 +116,19 @@ class DataCleaner:
 
         return default
     
-    def _load_category_keywords(self, path: str) -> Set[str]:
-        """Load category-specific keywords from file."""
+    def _load_category_keywords(self, path: str, defaults: Optional[Set[str]] = None) -> Set[str]:
+        """Load category-specific keywords from file or use defaults."""
+        keywords = set()
+        if defaults:
+            keywords.update(d.lower() for d in defaults)
         try:
             p = Path(path)
             if p.is_file():
                 with p.open('r', encoding='utf-8') as f:
-                    return set(ln.strip().lower() for ln in f if ln.strip())
+                    keywords.update(ln.strip().lower() for ln in f if ln.strip())
         except Exception:
             pass
-        return set()
+        return keywords
     
     def normalize_country_name(self, country: str) -> str:
         """Normalize country names to standard format"""
@@ -164,9 +177,17 @@ class DataCleaner:
         
         risk_lower = risk_normalized.lower()
         
-        if 'do not travel' in risk_lower or 'level 4' in risk_lower:
+        if (
+            'do not travel' in risk_lower
+            or 'level 4' in risk_lower
+            or 'advise against all travel' in risk_lower
+        ):
             return 4
-        elif 'reconsider' in risk_lower or 'level 3' in risk_lower:
+        elif (
+            'reconsider' in risk_lower
+            or 'level 3' in risk_lower
+            or 'all but essential travel' in risk_lower
+        ):
             return 3
         elif 'exercise increased' in risk_lower or 'level 2' in risk_lower:
             return 2
@@ -202,6 +223,38 @@ class DataCleaner:
         
         return list(set(found_keywords + additional_keywords))[:max_keywords]
     
+    def calculate_corpus_grade(self, text: str) -> str:
+        """
+        Calculate an A-E grade based on the presence of risk-related corpus words.
+        A = Lowest Risk (No/Few risk words)
+        E = Highest Risk (Many risk words)
+        """
+        if not text:
+            return 'A'
+            
+        text_lower = text.lower()
+        
+        # Aggregate all risk keywords
+        all_keywords = self._corpus_keywords | self._security_keywords | self._safety_keywords | self._serenity_keywords
+        
+        # Count unique keywords present in the text
+        hit_count = 0
+        for kw in all_keywords:
+            if kw in text_lower:
+                hit_count += 1
+                
+        # Grading Scale based on keyword density
+        if hit_count == 0:
+            return 'A'
+        elif hit_count <= 2:
+            return 'B'
+        elif hit_count <= 5:
+            return 'C'
+        elif hit_count <= 9:
+            return 'D'
+        else:
+            return 'E'
+
     def categorize_advisory(self, text: str) -> Dict[str, bool]:
         """
         Categorize advisory by security, safety, and serenity concerns.
@@ -295,6 +348,9 @@ class DataCleaner:
         else:
             cleaned['sentiment_score'] = 0.0
         
+        # Corpus-based Risk Grade (A-E)
+        cleaned['corpus_risk_grade'] = self.calculate_corpus_grade(full_text)
+        
         # Parse date
         date_str = advisory.get('date')
         cleaned['date_parsed'] = self.parse_date(date_str)
@@ -316,16 +372,26 @@ class DataCleaner:
         return cleaned_advisories
     
     def deduplicate(self, advisories: List[Dict]) -> List[Dict]:
-        """Remove duplicate advisories based on source, country, and date"""
+        """Remove duplicate advisories with a stable fallback when date is missing."""
         seen = set()
         unique_advisories = []
         
         for advisory in advisories:
-            key = (
-                advisory.get('source', ''),
-                advisory.get('country_normalized', advisory.get('country', '')),
-                advisory.get('date_parsed') or advisory.get('date', '')
-            )
+            source = advisory.get('source', '')
+            country = advisory.get('country_normalized', advisory.get('country', ''))
+            date_val = advisory.get('date_parsed') or advisory.get('date')
+
+            if date_val:
+                key = (source, country, str(date_val))
+            else:
+                # Most sources miss publication date; use content/url fallback to avoid duplicates.
+                key = (
+                    source,
+                    country,
+                    advisory.get('url', ''),
+                    advisory.get('risk_level_normalized', advisory.get('risk_level', '')),
+                    (advisory.get('description_cleaned') or advisory.get('description') or '')[:160]
+                )
             
             if key not in seen:
                 seen.add(key)

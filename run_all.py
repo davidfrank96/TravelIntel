@@ -28,6 +28,7 @@ SCRIPTS = [
     ("test_scrapers.py", "Scraper tests"),
     ("test_nlp_enhancements.py", "NLP enhancement tests"),
     ("test_insight_analyzer.py", "Insight analyzer tests"),
+    ("test_dashboard_data.py", "Dashboard data tests"),
     ("validate_nlp.py", "NLP validation"),
     ("main.py", "Pipeline run"),
 ]
