@@ -5,10 +5,12 @@ HTTP-based scraping (No Playwright)
 """
 
 import re
-import requests
-from datetime import datetime, timezone
+import time
+import os
+from datetime import datetime
 from typing import List, Dict
 from bs4 import BeautifulSoup
+import requests
 from scraper_base import BaseScraper
 
 
@@ -58,33 +60,48 @@ class USStateDeptScraper(BaseScraper):
 # ==========================================================
 
 class UKFCDOScraper(BaseScraper):
-    """Scraper for UK Foreign Travel Advice"""
+    """Scraper for UK Foreign, Commonwealth & Development Office"""
+
+    def _extract_uk_risk_level(self, text: str) -> str:
+        """Infer UK advisory level from detail page text."""
+        low = (text or "").lower()
+        if "advises against all travel" in low:
+            return "Advise Against All Travel"
+        if "advises against all but essential travel" in low:
+            return "Advise Against All But Essential Travel"
+        if "see our travel advice" in low:
+            return "See Official Advice"
+        return "Unknown"
+
+    def fetch(self) -> BeautifulSoup:
+        response = requests.get(self.url, headers=HEADERS, timeout=20)
+        response.raise_for_status()
+        return BeautifulSoup(response.text, "html.parser")
 
     def parse(self, soup: BeautifulSoup) -> List[Dict]:
         advisories = []
 
-        advisory_items = soup.find_all("a", href=re.compile(r"/traveladvisories/"))
+        country_links = soup.find_all("a", href=re.compile(r"/foreign-travel-advice/"))
 
-        for item in advisory_items:
+        for link in country_links:
             try:
-                country = item.get_text(strip=True)
-                link = item["href"]
+                country = link.get_text(strip=True)
+                url = link["href"]
 
-                if not link.startswith("http"):
-                    link = f"https://travel.state.gov{link}"
+                if not url.startswith("http"):
+                    url = f"https://www.gov.uk{url}"
 
                 advisories.append({
-                    "source": "UK Foreign Travel",
+                    "source": "UK FCDO",
                     "country": country,
                     "risk_level": "See advisory page",
                     "date": None,
                     "description": "",
-                    "url": link,
-                    "scraped_at": datetime.utcnow().isoformat()
+                    "url": url,
+                    "scraped_at": datetime.now(timezone.utc).isoformat()
                 })
 
-            except Exception as e:
-                logger.warning(f"Skipping item: {e}")
+            except Exception:
                 continue
 
         return advisories

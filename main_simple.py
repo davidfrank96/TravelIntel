@@ -4,7 +4,7 @@ Main Orchestration Script - Simplified with reliable scraper
 import time
 from typing import List, Dict
 from scrapers_simple import SimpleAdvisoryScraper
-from database_sqlite import DatabaseHandler
+from db_factory import get_handler
 from data_cleaner import DataCleaner
 from tqdm import tqdm
 
@@ -18,7 +18,7 @@ class TravelAdvisoryPipeline:
         self.scraper = SimpleAdvisoryScraper()
         
         # Initialize database
-        self.db = DatabaseHandler()
+        self.db = get_handler()
         
         # Initialize data cleaner
         self.cleaner = DataCleaner()
@@ -42,11 +42,20 @@ class TravelAdvisoryPipeline:
         
         cleaned = self.cleaner.clean_batch(advisories)
         deduplicated = self.cleaner.deduplicate(cleaned)
+        quality_filtered = []
+        for adv in deduplicated:
+            country_ok = (adv.get("country_normalized") or adv.get("country") or "").strip().lower() != "unknown"
+            risk_ok = (adv.get("risk_score") or 0) > 0
+            desc = (adv.get("description_cleaned") or adv.get("description") or "").strip()
+            text_ok = len(desc) >= 40
+            if country_ok and (risk_ok or text_ok):
+                quality_filtered.append(adv)
         
         print(f"Cleaned {len(cleaned)} advisories")
         print(f"After deduplication: {len(deduplicated)} advisories")
+        print(f"After quality filter: {len(quality_filtered)} advisories")
         
-        return deduplicated
+        return quality_filtered
     
     def store_data(self, advisories: List[Dict]):
         """Store cleaned data in database"""
@@ -72,7 +81,7 @@ class TravelAdvisoryPipeline:
                 'has_serenity_concerns': advisory.get('has_serenity_concerns', False)
             })
         
-        if processed_data:
+        if processed_data and hasattr(self.db, "insert_processed_data"):
             self.db.insert_processed_data(processed_data)
             print(f"Stored {len(processed_data)} processed records")
     

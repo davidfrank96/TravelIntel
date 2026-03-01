@@ -101,12 +101,18 @@ copy .env.example .env
 Edit `.env` and add your database credentials:
 
 ```
+DB_BACKEND=postgres
 DB_HOST=localhost
 DB_PORT=5432
 DB_NAME=travel_advisories
 DB_USER=postgres
 DB_PASSWORD=your_password
+USE_PLAYWRIGHT=false
+FCDO_MAX_ROWS=80
+SCRAPER_HEALTH_PORT=8081
 ```
+
+All `DB_*` vars are required. The app now fails fast if any DB variable is missing.
 
 ### 5. Configure Proxies (Optional)
 
@@ -158,7 +164,17 @@ streamlit run dashboard.py
 This provides an interactive view of advisories and location-level insights
 for security, safety, and serenity (no ML prediction involved).
 
-### 9. Query the Database
+### 9. Pre-deploy Smoke Test
+
+Before deployment, run:
+
+```bash
+python predeploy_smoke.py
+```
+
+This verifies scrape -> clean/store -> dashboard data load against PostgreSQL.
+
+### 10. Query the Database
 
 View scraped data:
 
@@ -182,6 +198,28 @@ Run the scraper every 6 hours:
 
 ```bash
 python main.py --schedule 6
+```
+
+The scraper now exposes a health endpoint at `http://localhost:8081/healthz`.
+
+## Docker Compose Deployment
+
+Base stack (db + scraper + dashboard):
+
+```bash
+docker compose up -d --build
+```
+
+HTTP reverse proxy profile:
+
+```bash
+docker compose --profile proxy up -d --build
+```
+
+TLS-ready reverse proxy profile (requires `deploy/certs/fullchain.pem` and `deploy/certs/privkey.pem`):
+
+```bash
+docker compose --profile proxy-tls up -d --build
 ```
 
 ## Troubleshooting

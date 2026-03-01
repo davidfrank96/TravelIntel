@@ -1,27 +1,28 @@
 """
-Quick script to check if database has data
+Quick script to check if database has data.
 """
-from database_sqlite import DatabaseHandler
 
-db = DatabaseHandler()
+from db_factory import get_handler
+
+
+db = get_handler()
 
 try:
-    # Check advisories
     advisories = db.get_advisories(limit=5)
-    print(f"\n📊 Total advisories in database: {len(db.get_advisories(limit=99999))}")
-    
+    total = len(db.get_advisories(limit=99999))
+    print(f"\nTotal advisories in database: {total}")
+
     if advisories:
-        print(f"\n✓ Found {len(advisories)} recent advisories:")
+        print(f"\nFound {len(advisories)} recent advisories:")
         for adv in advisories[:3]:
             print(f"  - {adv.get('country')} ({adv.get('source')}): {adv.get('date')}")
     else:
-        print("\n✗ No advisories found - scraper may not have run yet")
-    
-    # Check countries
-    countries = db.get_all_countries()
-    if countries:
-        print(f"\n✓ Countries in database: {len(countries)}")
-        print(f"  Sample: {', '.join(countries[:5])}")
-    
+        print("\nNo advisories found - scraper may not have run yet")
+
+    if hasattr(db, "get_all_countries"):
+        countries = db.get_all_countries()
+        if countries:
+            print(f"\nCountries in database: {len(countries)}")
+            print(f"  Sample: {', '.join(countries[:5])}")
 finally:
     db.close()
