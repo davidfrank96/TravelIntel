@@ -1,250 +1,101 @@
-# Travel Advisory Scraper with AI Prediction
+﻿# TravelIntel — AI Travel Intelligence Briefings
 
-A comprehensive web scraping system for collecting travel advisories from multiple government sources, with data cleaning, PostgreSQL storage, and AI-powered risk prediction.
+TravelIntel is a travel intelligence briefing platform that replaces manual pre-travel research with a single, personalized, CIA-style intelligence report generated in seconds using LLMs.
 
-## Features
+## What It Does
 
-- **Rotating Residential Proxy Support**: Built-in proxy rotation manager for reliable scraping
-- **Multiple Scraping Engines**: Supports Playwright, Selenium, and Requests
-- **Multiple Data Sources**:
-  - U.S. Department of State (travel.state.gov)
-  - UK Foreign Office (FCDO) (gov.uk/foreign-travel-advice)
-  - Australian Smart Traveller (smartraveller.gov.au)
-  - IATA Travel Centre (iatatravelcentre.com)
-  - Canada Travel Advisories (travel.gc.ca)
-- **Data Cleaning & Normalization**: Automatic country name and risk level normalization
-- **PostgreSQL Database**: Structured storage with proper indexing
-- **AI Prediction**: Machine learning model for risk level prediction
-- **Scheduled Scraping**: Automated periodic data collection
+A traveler submits six fields:
 
-## Installation
+- Name
+- Nationality
+- Destination country
+- Destination city
+- Travel date
+- Trip type
 
-1. **Clone or download this repository**
+The system then:
 
-2. **Install Python dependencies**:
+1. Calls OpenAI in two passes:
+   - Pass 1 extracts structured intelligence facts (risk grade, emergency numbers, consulate, hospitals, legal restrictions, cultural rules, operational guidance, key locations).
+   - Pass 2 synthesizes those facts into a personalized narrative briefing.
+2. Checks a PostgreSQL cache before every LLM call. If another user requested the same destination within seven days, the cached briefing is returned instantly.
+3. Returns a free preview (risk grade, security snapshot, emergency numbers).
+4. Unlocks the full briefing after payment and provides a downloadable PDF report.
+
+## Quick Start (Briefing API)
+
+### 1) Install dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-3. **Install Playwright browsers** (if using Playwright):
-```bash
-playwright install chromium
+### 2) Configure environment
+
+Create `.env` (see `.env.example`) and set at least:
+
+```
+DB_HOST=localhost
+DB_PORT=5432
+DB_NAME=travel_advisories
+DB_USER=postgres
+DB_PASSWORD=your_password
+OPENAI_API_KEY=your_openai_api_key
+OPENAI_MODEL=gpt-5.4-mini
+BRIEFING_CACHE_DAYS=7
 ```
 
-4. **Install ChromeDriver** (if using Selenium):
-   - Download from https://chromedriver.chromium.org/
-   - Add to PATH or specify in code
-
-5. **Set up PostgreSQL database**:
-```sql
-CREATE DATABASE travel_advisories;
-```
-
-6. **Configure environment variables**:
-   - Copy `.env.example` to `.env`
-   - Update database credentials
-   - Add your proxy credentials (if using proxies)
-
-7. **Configure proxies** (optional):
-   Edit `config.py` and add your proxy URLs to `PROXY_CONFIG['proxies']`:
-```python
-'proxies': [
-    'http://username:password@proxy1.example.com:8080',
-    'http://username:password@proxy2.example.com:8080',
-]
-```
-
-## Usage
-
-### Basic Usage
-
-Run the scraper once:
-```bash
-python main.py
-```
-
-### Scheduled Scraping
-
-Run every 6 hours:
-```bash
-python main.py --schedule 6
-```
-
-### Scrape Specific Source
+### 3) Run the API
 
 ```bash
-python main.py --source us_state_dept
+python -m briefing.run_api
 ```
 
-### Run the Dashboard UI
+API will be available at `http://localhost:8000`.
 
-After you have scraped some data and the database has records:
+### 4) Call the API
+
+**Preview**
 
 ```bash
-streamlit run dashboard.py
+POST /briefings/preview
 ```
 
-This opens a web UI where users can explore security, safety, and serenity
-insights per country (no predictions, only descriptive analysis).
+**Full briefing (requires payment flag)**
 
-## Project Structure
-
-```
-OSINT/
-├── main.py                 # Main orchestration script
-├── config.py              # Configuration settings
-├── proxy_manager.py       # Proxy rotation manager
-├── scraper_base.py        # Base scraper class
-├── scrapers.py            # Individual site scrapers
-├── database.py            # PostgreSQL database handler
-├── data_cleaner.py        # Data cleaning and normalization
-├── ai_predictor.py        # AI prediction module
-├── requirements.txt       # Python dependencies
-├── .env.example          # Environment variables template
-└── README.md             # This file
+```bash
+POST /briefings/full
 ```
 
-## Configuration
+Include JSON:
 
-### Database Configuration
-
-Edit `config.py` or set environment variables:
-- `DB_HOST`: Database host (default: localhost)
-- `DB_PORT`: Database port (default: 5432)
-- `DB_NAME`: Database name (default: travel_advisories)
-- `DB_USER`: Database user (default: postgres)
-- `DB_PASSWORD`: Database password
-
-### Proxy Configuration
-
-Add your residential proxy credentials to `config.py`:
-```python
-PROXY_CONFIG = {
-    'proxies': [
-        'http://user:pass@proxy1.example.com:8080',
-        # Add more proxies...
-    ],
-    'rotation_strategy': 'round_robin',  # or 'random', 'least_used'
-    'timeout': 30,
-    'max_retries': 3
+```json
+{
+  "name": "Ada",
+  "nationality": "Nigerian",
+  "destination_country": "France",
+  "destination_city": "Paris",
+  "travel_date": "2026-05-10",
+  "trip_type": "Business",
+  "paid": true,
+  "payment_reference": "stripe_123"
 }
 ```
 
-### Scraper Configuration
+**PDF download**
 
-Adjust scraping behavior in `config.py`:
-```python
-SCRAPER_CONFIG = {
-    'headless': True,        # Run browser in headless mode
-    'timeout': 30000,        # Page load timeout (ms)
-    'wait_time': 3,          # Wait time after page load (seconds)
-    'user_agent_rotation': True,
-    'respect_robots_txt': False
-}
+```bash
+GET /briefings/{briefing_id}/pdf
 ```
 
-## Database Schema
+## Legacy Scraper Pipeline
 
-### travel_advisories
-- `id`: Primary key
-- `source`: Source website
-- `country`: Country name
-- `risk_level`: Risk level text
-- `date`: Advisory date
-- `description`: Full description
-- `url`: Source URL
-- `scraped_at`: Scraping timestamp
+This repo still includes the original advisory scraping pipeline (multi-source scraper + data cleaning + dashboard). It remains intact and can run in parallel, but the primary product objective is now the AI-generated traveler briefing flow described above.
 
-### processed_advisories
-- `id`: Primary key
-- `advisory_id`: Foreign key to travel_advisories
-- `country_normalized`: Normalized country name
-- `risk_level_normalized`: Normalized risk level
-- `risk_score`: Numeric risk score (1-4)
-- `keywords`: Extracted keywords array
-- `sentiment_score`: Sentiment analysis score
-
-### predictions
-- `id`: Primary key
-- `advisory_id`: Foreign key to travel_advisories
-- `predicted_risk_level`: AI predicted risk level
-- `predicted_risk_score`: AI predicted score
-- `confidence`: Prediction confidence
-- `model_version`: Model version used
-
-## Data Cleaning
-
-The `DataCleaner` class provides:
-- Country name normalization
-- Risk level standardization
-- Risk score extraction (1-4 scale)
-- Keyword extraction
-- Text cleaning
-- Deduplication
-
-## AI Prediction
-
-The `AIPredictor` class uses:
-- Random Forest Classifier
-- TF-IDF vectorization for text features
-- Automatic model training on historical data
-- Risk level prediction with confidence scores
-
-## Customization
-
-### Adding New Scrapers
-
-1. Create a new scraper class inheriting from `BaseScraper`:
-```python
-class NewSourceScraper(BaseScraper):
-    def parse(self, soup: BeautifulSoup) -> List[Dict]:
-        # Implement parsing logic
-        return advisories
-```
-
-2. Add to `scrapers.py` and register in `main.py`
-
-### Modifying Parsing Logic
-
-Each scraper's `parse()` method can be customized based on the website structure. You may need to inspect the HTML structure of target sites and adjust selectors accordingly.
-
-## Troubleshooting
-
-### Proxy Issues
-- Verify proxy credentials are correct
-- Check proxy format: `http://user:pass@host:port`
-- Test proxies manually before running scraper
-
-### Database Connection Issues
-- Verify PostgreSQL is running
-- Check database credentials in `.env`
-- Ensure database exists
-
-### Scraping Failures
-- Some sites may have changed structure - update selectors in scrapers
-- Increase timeout values if pages load slowly
-- Check if sites require JavaScript rendering (use Playwright/Selenium)
-
-### Model Training Issues
-- Ensure sufficient historical data exists
-- Check that risk levels are properly normalized
-- Verify feature extraction is working
-
-## Legal & Ethical Considerations
-
-- Respect website terms of service
-- Implement rate limiting
-- Consider robots.txt compliance
-- Use proxies responsibly
-- Only scrape publicly available data
+Legacy entry points:
+- `main.py` (scrape -> clean -> store)
+- `dashboard.py` (Streamlit dashboard)
 
 ## License
 
-This project is provided as-is for educational and research purposes.
-
-## Support
-
-For issues or questions:
-1. Check the troubleshooting section
-2. Review configuration settings
-3. Inspect error messages for specific issues
+See `LICENSE`.
